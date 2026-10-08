@@ -15,6 +15,8 @@ import java.util.UUID
 class CaptureRepository(
     private val dao: ItemDao,
     private val now: () -> Long = System::currentTimeMillis,
+    /** Told after every committed change, so the app can start sending. */
+    private val onChanged: () -> Unit = {},
 ) {
     private val lock = Mutex()
 
@@ -50,6 +52,7 @@ class CaptureRepository(
                 State.COMMITTED, existing?.createdAt ?: t, t,
             )
         )
+        onChanged()
         true
     }
 
@@ -68,6 +71,7 @@ class CaptureRepository(
                 state = State.COMMITTED, updatedAt = now(),
             )
         )
+        onChanged()
         true
     }
 
@@ -75,6 +79,7 @@ class CaptureRepository(
     suspend fun delete(id: String) = lock.withLock {
         val existing = dao.get(id) ?: return@withLock
         dao.upsert(existing.copy(deleted = true, state = State.COMMITTED, updatedAt = now()))
+        onChanged()
     }
 
     /** After a crash or a killed app: whatever was typed is kept, whatever was empty is cleared. */

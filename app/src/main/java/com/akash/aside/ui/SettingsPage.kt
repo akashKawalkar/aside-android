@@ -37,6 +37,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,6 +65,8 @@ fun SettingsPage(activity: FragmentActivity, repo: CaptureRepository, modifier: 
     ) {
         StatusSection(repo)
         HorizontalDivider()
+        CloudSection(activity)
+        HorizontalDivider()
         CaptureSection()
         HorizontalDivider()
         AppearanceSection()
@@ -78,13 +81,83 @@ private fun Heading(text: String) = Text(text, style = MaterialTheme.typography.
 
 @Composable
 private fun StatusSection(repo: CaptureRepository) {
+    val ctx = LocalContext.current
     val pending by remember { repo.observePending() }.collectAsState(0)
+    val signedIn = Prefs.session(ctx) != null
     Heading("Status")
     Text(
-        if (pending == 0) "Nothing is waiting." else "$pending item${if (pending == 1) "" else "s"} saved on this phone.",
+        when {
+            pending == 0 -> "Everything is saved."
+            signedIn -> "$pending item${if (pending == 1) "" else "s"} waiting to be sent."
+            else -> "$pending item${if (pending == 1) "" else "s"} saved on this phone, waiting for sign-in."
+        },
         style = MaterialTheme.typography.bodyMedium,
     )
-    Text("Sending to the cloud is not set up yet; everything stays on this phone for now.", style = MaterialTheme.typography.bodySmall)
+    val last = Prefs.lastSyncAt(ctx)
+    if (last > 0) {
+        Text(
+            "Last sent " + java.time.Instant.ofEpochMilli(last).atZone(java.time.ZoneId.systemDefault())
+                .format(java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm")),
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    Prefs.lastSyncError(ctx)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+}
+
+/** Sign in once; after that notes and tasks are sent by themselves. */
+@Composable
+private fun CloudSection(activity: FragmentActivity) {
+    val app = activity.application as com.akash.aside.AsideApp
+    val client = app.cloud
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var signedIn by remember { mutableStateOf(client.signedIn) }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    Heading("Cloud")
+    when {
+        !client.configured -> Text(
+            "This build has no cloud address. Add supabase.url and supabase.anon_key to local.properties and rebuild.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        signedIn -> {
+            Text("Signed in as ${client.email}", style = MaterialTheme.typography.bodyMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = { com.akash.aside.cloud.Sync.kick(activity) }) { Text("Send now") }
+                OutlinedButton(onClick = { client.signOut(); signedIn = false }) { Text("Sign out") }
+            }
+        }
+        else -> {
+            androidx.compose.material3.OutlinedTextField(
+                email, { email = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Email),
+            )
+            androidx.compose.material3.OutlinedTextField(
+                password, { password = it }, label = { Text("Password") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
+            )
+            Button(
+                enabled = !busy && email.isNotBlank() && password.isNotEmpty(),
+                onClick = {
+                    busy = true; error = null
+                    scope.launch {
+                        try {
+                            client.signIn(email, password)
+                            signedIn = true; password = ""
+                            com.akash.aside.cloud.Sync.kick(activity)
+                        } catch (e: Exception) {
+                            error = e.message ?: "Could not sign in"
+                        } finally { busy = false }
+                    }
+                },
+            ) { Text(if (busy) "Signing in…" else "Sign in") }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            Text("You sign in once; the phone keeps the session.", style = MaterialTheme.typography.bodySmall)
+        }
+    }
 }
 
 @Composable

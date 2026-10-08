@@ -48,6 +48,16 @@ interface ItemDao {
 
     @Query("SELECT * FROM item WHERE state = 'open' ORDER BY updatedAt DESC") suspend fun open(): List<Item>
 
+    /** Finished items not yet delivered (including edits and deletions of delivered ones). */
+    @Query("SELECT * FROM item WHERE state = 'committed' ORDER BY updatedAt") suspend fun committed(): List<Item>
+
+    /** Marks delivered, but only if the item was not changed while it was being sent. */
+    @Query("UPDATE item SET state = 'synced' WHERE id = :id AND updatedAt = :updatedAt AND state = 'committed'")
+    suspend fun markSynced(id: String, updatedAt: Long)
+
+    /** Forgets a deleted item once the cloud has been told, unless it changed meanwhile. */
+    @Query("DELETE FROM item WHERE id = :id AND updatedAt = :updatedAt") suspend fun removeIfUnchanged(id: String, updatedAt: Long)
+
     /** Everything the user has finished writing and not deleted, newest first. */
     @Query("SELECT * FROM item WHERE state != 'open' AND deleted = 0 ORDER BY createdAt DESC")
     fun observeVisible(): Flow<List<Item>>

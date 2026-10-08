@@ -3,6 +3,8 @@ package com.akash.aside
 import android.app.Application
 import androidx.room.Room
 import com.akash.aside.capture.CaptureRepository
+import com.akash.aside.cloud.Sync
+import com.akash.aside.cloud.SupabaseClient
 import com.akash.aside.data.AppDb
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,11 +18,13 @@ object AppScope : CoroutineScope {
 
 class AsideApp : Application() {
     val db: AppDb by lazy { Room.databaseBuilder(this, AppDb::class.java, "aside.db").build() }
-    val repo: CaptureRepository by lazy { CaptureRepository(db.itemDao()) }
+    val cloud: SupabaseClient by lazy { SupabaseClient(this) }
+    val repo: CaptureRepository by lazy { CaptureRepository(db.itemDao(), onChanged = { Sync.kick(this) }) }
 
     override fun onCreate() {
         super.onCreate()
         // Anything typed when the app died is kept (or cleared if empty).
         AppScope.launch { repo.recoverOpen() }
+        Sync.schedulePeriodic(this)
     }
 }

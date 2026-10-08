@@ -22,6 +22,13 @@ private class FakeDao : ItemDao {
     override suspend fun get(id: String) = rows[id]
     override suspend fun remove(id: String) { rows.remove(id) }
     override suspend fun open() = rows.values.filter { it.state == State.OPEN }
+    override suspend fun committed() = rows.values.filter { it.state == State.COMMITTED }.sortedBy { it.updatedAt }
+    override suspend fun markSynced(id: String, updatedAt: Long) {
+        rows[id]?.let { if (it.updatedAt == updatedAt && it.state == State.COMMITTED) rows[id] = it.copy(state = State.SYNCED) }
+    }
+    override suspend fun removeIfUnchanged(id: String, updatedAt: Long) {
+        rows[id]?.let { if (it.updatedAt == updatedAt) rows.remove(id) }
+    }
     override fun observeVisible(): Flow<List<Item>> = flowOf(rows.values.filter { it.state != State.OPEN && !it.deleted })
     override fun observePending(): Flow<Int> = flowOf(rows.values.count { it.state == State.COMMITTED })
 }
@@ -142,5 +149,66 @@ class CaptureRepositoryTest {
         assertEquals(Kind.JOURNAL, dao.rows["a"]!!.kind)
         assertEquals(State.COMMITTED, dao.rows["a"]!!.state)
         assertNull(dao.rows["b"])
+    }
+}
+
+private class FakeRemote(var failWith: Exception? = null, var onCapture: suspend (Item) -> Unit = {}) : com.akash.aside.cloud.Remote {
+    val captured = mutableListOf<String>()
+    val deleted = mutableListOf<String>()
+    override suspend fun capture(item: Item) {
+        onCapture(item)
+        failWith?.let { throw it }
+        captured += item.id
+    }
+    override suspend fun delete(id: String) { failWith?.let { throw it }; deleted += id }
+}
+
+class SyncEngineTest {
+    private val dao = FakeDao()
+    private var clock = 1000L
+    private val repo = CaptureRepository(dao) { clock++ }
+
+    @Test fun `sends what is waiting and marks it delivered`() = runBlocking {
+        repo.commit("a", "one", Kind.NOTE, null); repo.commit("b", "two", Kind.TASK, 5L)
+        val remote = FakeRemote()
+        val out = com.akash.aside.cloud.SyncEngine(dao, remote).run()
+        assertEquals(listOf("a", "b"), remote.captured); assertEquals(2, out.sent)
+        assertTrue(dao.rows.values.all { it.state == State.SYNCED })
+        assertEquals(0, com.akash.aside.cloud.SyncEngine(dao, remote).run().sent)         // nothing left to send
+    }
+
+    @Test fun `a network failure stops the run, keeps everything waiting and asks for a retry`() = runBlocking {
+        repo.commit("a", "one", Kind.NOTE, null)
+        val out = com.akash.aside.cloud.SyncEngine(dao, FakeRemote(com.akash.aside.cloud.TransientError("offline"))).run()
+        assertTrue(out.retryLater); assertEquals(State.COMMITTED, dao.rows["a"]!!.state)
+    }
+
+    @Test fun `a refused item does not block the others`() = runBlocking {
+        repo.commit("a", "bad", Kind.NOTE, null); repo.commit("b", "good", Kind.NOTE, null)
+        val remote = FakeRemote(onCapture = { if (it.id == "a") throw com.akash.aside.cloud.RejectedError(400, "nope") })
+        val out = com.akash.aside.cloud.SyncEngine(dao, remote).run()
+        assertEquals(1, out.rejected); assertEquals(listOf("b"), remote.captured)
+        assertEquals(State.COMMITTED, dao.rows["a"]!!.state); assertEquals(State.SYNCED, dao.rows["b"]!!.state)
+        assertFalse(out.retryLater)
+    }
+
+    @Test fun `an edit made while sending stays waiting`() = runBlocking {
+        repo.commit("a", "first", Kind.NOTE, null)
+        val remote = FakeRemote(onCapture = { repo.edit("a", "second", Kind.NOTE, null) })
+        com.akash.aside.cloud.SyncEngine(dao, remote).run()
+        assertEquals("second", dao.rows["a"]!!.text); assertEquals(State.COMMITTED, dao.rows["a"]!!.state)
+    }
+
+    @Test fun `deleted items are removed from the cloud and then forgotten`() = runBlocking {
+        repo.commit("a", "bye", Kind.NOTE, null); repo.delete("a")
+        val remote = FakeRemote()
+        com.akash.aside.cloud.SyncEngine(dao, remote).run()
+        assertEquals(listOf("a"), remote.deleted); assertNull(dao.rows["a"])
+    }
+
+    @Test fun `signed out stops without retrying`() = runBlocking {
+        repo.commit("a", "x", Kind.NOTE, null)
+        val out = com.akash.aside.cloud.SyncEngine(dao, FakeRemote(com.akash.aside.cloud.AuthRequired())).run()
+        assertFalse(out.retryLater); assertEquals(State.COMMITTED, dao.rows["a"]!!.state)
     }
 }

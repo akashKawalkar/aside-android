@@ -33,4 +33,25 @@ object Prefs {
     /** Opening the app asks for fingerprint / PIN. The dot and the input window are never locked. */
     fun lockEnabled(c: Context) = sp(c).getBoolean("lock_enabled", true)
     fun setLockEnabled(c: Context, v: Boolean) = sp(c).edit().putBoolean("lock_enabled", v).apply()
+
+    // --- cloud sign-in (kept in the app's private storage) and the last sync result ---
+    class Session(val access: String, val refresh: String, val expiresAt: Long, val email: String)
+
+    fun session(c: Context): Session? {
+        val p = sp(c)
+        val refresh = p.getString("refresh_token", null) ?: return null
+        return Session(p.getString("access_token", "").orEmpty(), refresh, p.getLong("expires_at", 0L), p.getString("email", "").orEmpty())
+    }
+
+    fun setSession(c: Context, s: Session?) {
+        val e = sp(c).edit()
+        if (s == null) e.remove("access_token").remove("refresh_token").remove("expires_at").remove("email")
+        else e.putString("access_token", s.access).putString("refresh_token", s.refresh).putLong("expires_at", s.expiresAt).putString("email", s.email)
+        e.apply()
+    }
+
+    fun lastSyncAt(c: Context) = sp(c).getLong("last_sync_at", 0L)
+    fun lastSyncError(c: Context) = sp(c).getString("last_sync_error", null)
+    fun setSyncResult(c: Context, at: Long, error: String?) =
+        sp(c).edit().putLong("last_sync_at", at).apply { if (error == null) remove("last_sync_error") else putString("last_sync_error", error) }.apply()
 }
