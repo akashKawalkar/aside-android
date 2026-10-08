@@ -43,7 +43,7 @@ fun AppRoot(activity: FragmentActivity, locked: Boolean, onUnlocked: () -> Unit)
                 Tab(selected = pager.currentPage == 1, onClick = { scope.launch { pager.animateScrollToPage(1) } }, text = { Text("Settings") })
             }
             HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
-                if (page == 0) NotesPage(repo) else SettingsPage(activity, repo)
+                if (page == 0) NotesPage(repo, (activity.application as AsideApp).cloud) else SettingsPage(activity, repo)
             }
         }
     }

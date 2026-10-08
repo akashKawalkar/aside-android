@@ -22,6 +22,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +35,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.akash.aside.capture.CaptureRepository
 import com.akash.aside.capture.Search
+import com.akash.aside.cloud.SupabaseClient
+import kotlinx.coroutines.delay
 import com.akash.aside.data.Item
 import com.akash.aside.data.Kind
 import kotlinx.coroutines.launch
@@ -54,11 +57,22 @@ private fun label(kind: String) = when (kind) {
 
 /** Everything captured, newest first, with word search. Tap an item to change it. */
 @Composable
-fun NotesPage(repo: CaptureRepository, modifier: Modifier = Modifier) {
+fun NotesPage(repo: CaptureRepository, client: SupabaseClient, modifier: Modifier = Modifier) {
     val items by remember { repo.observeVisible() }.collectAsState(emptyList())
     var query by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<Item?>(null) }
     val shown = remember(items, query) { items.filter { Search.matchesAny(it.text, query) } }
+
+    // Words typed in the search box are also asked of the cloud, which holds every note, including those written on the laptop.
+    var cloud by remember { mutableStateOf<List<SupabaseClient.CloudNote>>(emptyList()) }
+    LaunchedEffect(query) {
+        cloud = emptyList()
+        if (query.isBlank() || !client.signedIn) return@LaunchedEffect
+        delay(400)
+        cloud = try { client.searchNotes(query) } catch (_: Exception) { emptyList() }
+    }
+    val localIds = remember(items) { items.mapTo(HashSet()) { it.id } }
+    val cloudOnly = remember(cloud, localIds) { cloud.filter { it.clientId == null || it.clientId !in localIds } }
 
     Column(modifier.fillMaxSize()) {
         OutlinedTextField(
@@ -66,7 +80,7 @@ fun NotesPage(repo: CaptureRepository, modifier: Modifier = Modifier) {
             placeholder = { Text("Search words") }, singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         )
-        if (shown.isEmpty()) {
+        if (shown.isEmpty() && cloudOnly.isEmpty()) {
             Text(
                 if (query.isBlank()) "Nothing here yet. Tap the dot to write something." else "No matches.",
                 style = MaterialTheme.typography.bodyMedium,
@@ -75,6 +89,15 @@ fun NotesPage(repo: CaptureRepository, modifier: Modifier = Modifier) {
         } else {
             LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp, 4.dp, 16.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(shown, key = { it.id }) { item -> ItemRow(item) { editing = item } }
+                if (cloudOnly.isNotEmpty()) {
+                    item(key = "cloud-header") {
+                        Text("Elsewhere", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
+                    }
+                    items(cloudOnly.size) { i ->
+                        val n = cloudOnly[i]
+                        ItemRow(Item(n.clientId ?: "cloud-$i", n.kind, n.text, null, "synced", n.createdAt, n.createdAt)) {}
+                    }
+                }
             }
         }
     }
