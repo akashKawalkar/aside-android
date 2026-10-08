@@ -114,7 +114,10 @@ class SupabaseClient(
                     connectTimeout = 15_000
                     readTimeout = 30_000
                     setRequestProperty("apikey", anonKey)
-                    setRequestProperty("Authorization", "Bearer ${bearer ?: anonKey}")
+                    // The old "anon" key is itself a JWT and may be sent as the bearer. The newer publishable key
+                    // (sb_publishable_...) is not a JWT and goes only in the apikey header.
+                    val token = bearer ?: anonKey.takeIf { it.startsWith("eyJ") }
+                    if (token != null) setRequestProperty("Authorization", "Bearer $token")
                     setRequestProperty("Content-Type", "application/json")
                     setRequestProperty("Accept", "application/json")
                     if (body != null) {
