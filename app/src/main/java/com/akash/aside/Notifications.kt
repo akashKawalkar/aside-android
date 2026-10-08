@@ -9,15 +9,19 @@ import android.content.Intent
 import com.akash.aside.overlay.CaptureService
 
 object Notifications {
-    private const val CH_STATUS = "capture_status"
+    private const val CH_STATUS_OLD = "capture_status"
+    // Android insists on a notification for a service that keeps the dot alive. It is posted to a channel that is
+    // created blocked (IMPORTANCE_NONE), so it exists for the system but is never shown.
+    private const val CH_STATUS = "capture_status_hidden"
     private const val CH_REMINDER = "capture_reminder"
     const val ID_STATUS = 1
     const val ID_REMINDER = 2
 
     fun ensureChannels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
+        nm.deleteNotificationChannel(CH_STATUS_OLD)
         nm.createNotificationChannel(
-            NotificationChannel(CH_STATUS, "Quick capture is on", NotificationManager.IMPORTANCE_MIN)
+            NotificationChannel(CH_STATUS, "Quick capture (keeps the dot alive, never shown)", NotificationManager.IMPORTANCE_NONE)
                 .apply { setShowBadge(false) }
         )
         nm.createNotificationChannel(
@@ -41,9 +45,6 @@ object Notifications {
             .setContentText("Tap to write")
             .setOngoing(true)
             .setContentIntent(serviceIntent(ctx, CaptureService.ACTION_OPEN, 10, foreground = false))
-            .addAction(
-                Notification.Action.Builder(null, "Hide", serviceIntent(ctx, CaptureService.ACTION_HIDE, 11, foreground = false)).build()
-            )
             .build()
 
     /** The one quiet nudge after the dot was hidden. Tapping it brings the dot back. */
