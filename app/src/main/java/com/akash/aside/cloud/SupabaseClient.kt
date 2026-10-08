@@ -23,7 +23,7 @@ class SupabaseClient(
     private val ctx: Context,
     private val baseUrl: String = BuildConfig.SUPABASE_URL.trimEnd('/'),
     private val anonKey: String = BuildConfig.SUPABASE_ANON_KEY,
-) : Remote {
+) : Remote, com.akash.aside.usage.UsageRemote {
     private val refreshLock = Mutex()
 
     val configured get() = baseUrl.isNotBlank() && anonKey.isNotBlank()
@@ -84,6 +84,18 @@ class SupabaseClient(
 
     override suspend fun delete(id: String) {
         rpc("delete_item", JSONObject().put("p_client_id", id))
+    }
+
+    override suspend fun uploadUsage(batch: List<com.akash.aside.data.UsageSession>) {
+        val rows = JSONArray()
+        for (s in batch) {
+            rows.put(
+                JSONObject().put("key", s.key).put("app", s.pkg)
+                    .put("start", Instant.ofEpochMilli(s.startMs).toString())
+                    .put("end", Instant.ofEpochMilli(s.endMs).toString())
+            )
+        }
+        rpc("upload_usage", JSONObject().put("p_batch", rows))
     }
 
     private suspend fun rpc(name: String, args: JSONObject): String {

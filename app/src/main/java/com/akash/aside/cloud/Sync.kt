@@ -14,6 +14,8 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.akash.aside.AsideApp
 import com.akash.aside.Prefs
+import com.akash.aside.usage.UsageCollector
+import com.akash.aside.usage.UsageSync
 import java.util.concurrent.TimeUnit
 
 object Sync {
@@ -40,9 +42,12 @@ class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
     override suspend fun doWork(): Result {
         val app = applicationContext as AsideApp
         val client = app.cloud
-        if (!client.configured || !client.signedIn) return Result.success()   // nothing to do until signed in
-        val outcome = SyncEngine(app.db.itemDao(), client).run()
-        Prefs.setSyncResult(applicationContext, System.currentTimeMillis(), outcome.error)
-        return if (outcome.retryLater) Result.retry() else Result.success()
+        // Usage is read into the phone's own store first, signed in or not, so nothing is lost while waiting.
+        runCatching { UsageCollector(applicationContext, app.db.usageDao()).collect() }
+        if (!client.configured || !client.signedIn) return Result.success()   // nothing to send until signed in
+        val items = SyncEngine(app.db.itemDao(), client).run()
+        val usage = UsageSync(app.db.usageDao(), client).run()
+        Prefs.setSyncResult(applicationContext, System.currentTimeMillis(), items.error ?: usage.error)
+        return if (items.retryLater || usage.retryLater) Result.retry() else Result.success()
     }
 }

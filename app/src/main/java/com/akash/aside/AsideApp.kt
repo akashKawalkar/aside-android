@@ -6,6 +6,7 @@ import com.akash.aside.capture.CaptureRepository
 import com.akash.aside.cloud.Sync
 import com.akash.aside.cloud.SupabaseClient
 import com.akash.aside.data.AppDb
+import com.akash.aside.data.MIGRATION_1_2
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -17,7 +18,7 @@ object AppScope : CoroutineScope {
 }
 
 class AsideApp : Application() {
-    val db: AppDb by lazy { Room.databaseBuilder(this, AppDb::class.java, "aside.db").build() }
+    val db: AppDb by lazy { Room.databaseBuilder(this, AppDb::class.java, "aside.db").addMigrations(MIGRATION_1_2).build() }
     val cloud: SupabaseClient by lazy { SupabaseClient(this) }
     val repo: CaptureRepository by lazy { CaptureRepository(db.itemDao(), onChanged = { Sync.kick(this) }) }
 

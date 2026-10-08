@@ -34,6 +34,19 @@ object Prefs {
     fun lockEnabled(c: Context) = sp(c).getBoolean("lock_enabled", true)
     fun setLockEnabled(c: Context, v: Boolean) = sp(c).edit().putBoolean("lock_enabled", v).apply()
 
+    // --- app usage tracking ---
+    /** On by default, but nothing is read until the phone's "Usage access" is granted. */
+    fun usageEnabled(c: Context) = sp(c).getBoolean("usage_enabled", true)
+    fun setUsageEnabled(c: Context, v: Boolean) = sp(c).edit().putBoolean("usage_enabled", v).apply()
+
+    /** Where the last read stopped; 0 means "start of today". */
+    fun usageCursor(c: Context) = sp(c).getLong("usage_cursor", 0L)
+    fun setUsageCursor(c: Context, v: Long) = sp(c).edit().putLong("usage_cursor", v).apply()
+
+    /** Apps never counted (banking, by default). Null until the list is first set up. */
+    fun ignoredApps(c: Context): Set<String>? = sp(c).getStringSet("ignored_apps", null)
+    fun setIgnoredApps(c: Context, v: Set<String>) = sp(c).edit().putStringSet("ignored_apps", v).apply()
+
     // --- cloud sign-in (kept in the app's private storage) and the last sync result ---
     class Session(val access: String, val refresh: String, val expiresAt: Long, val email: String)
 

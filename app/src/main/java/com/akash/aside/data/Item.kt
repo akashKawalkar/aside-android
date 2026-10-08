@@ -66,7 +66,16 @@ interface ItemDao {
     @Query("SELECT COUNT(*) FROM item WHERE state = 'committed'") fun observePending(): Flow<Int>
 }
 
-@Database(entities = [Item::class], version = 1, exportSchema = false)
+@Database(entities = [Item::class, UsageSession::class], version = 2, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun itemDao(): ItemDao
+    abstract fun usageDao(): UsageDao
+}
+
+/** Version 2 added the usage table; nothing a person wrote is touched. */
+val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `usage_session` (`key` TEXT NOT NULL, `pkg` TEXT NOT NULL, `startMs` INTEGER NOT NULL, `endMs` INTEGER NOT NULL, `state` TEXT NOT NULL, PRIMARY KEY(`key`))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_usage_session_state` ON `usage_session` (`state`)")
+    }
 }
