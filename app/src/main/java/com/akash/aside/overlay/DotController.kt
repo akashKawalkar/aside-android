@@ -1,6 +1,5 @@
 package com.akash.aside.overlay
 
-import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.PixelFormat
 import android.os.Handler
@@ -19,8 +18,8 @@ import com.akash.aside.R
 import kotlin.math.hypot
 
 /**
- * The floating dot: tap to write, drag to move (it snaps to the nearest edge), drag onto the X to hide it,
- * and it fades when left alone.
+ * The floating dot: tap to write, drag to put it anywhere (it stays exactly where it is dropped), drag it onto the X to
+ * hide it. It fades when left alone. Its size and picture come from the settings.
  */
 class DotController(
     private val ctx: Context,
@@ -29,14 +28,12 @@ class DotController(
     private val onHide: () -> Unit,
 ) {
     private val handler = Handler(Looper.getMainLooper())
-    private val size = Ui.dp(ctx, 52)
-    private val margin = Ui.dp(ctx, 2)
     private val slop = ViewConfiguration.get(ctx).scaledTouchSlop
+    private var size = Ui.dp(ctx, Prefs.SIZE_DEFAULT)
 
     private var view: FrameLayout? = null
     private var params: WindowManager.LayoutParams? = null
     private var trash: TextView? = null
-    private var trashParams: WindowManager.LayoutParams? = null
 
     private val fade = Runnable { view?.animate()?.alpha(IDLE_ALPHA)?.setDuration(400)?.start() }
 
@@ -46,14 +43,8 @@ class DotController(
 
     fun show() {
         if (view != null) return
-        val v = FrameLayout(ctx).apply {
-            background = Ui.circle(Ui.ACCENT)
-            addView(
-                ImageView(ctx).apply { setImageResource(R.drawable.ic_dot_plus) },
-                FrameLayout.LayoutParams(Ui.dp(ctx, 26), Ui.dp(ctx, 26), Gravity.CENTER),
-            )
-            contentDescription = "Quick capture"
-        }
+        size = Ui.dp(ctx, Prefs.dotSizeDp(ctx))
+        val v = buildView()
         val p = WindowManager.LayoutParams(
             size, size,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -68,6 +59,24 @@ class DotController(
         scheduleFade()
     }
 
+    private fun buildView(): FrameLayout = FrameLayout(ctx).apply {
+        contentDescription = "Quick capture"
+        val custom = DotIcon.load(ctx)
+        if (custom != null) {
+            // The user's own picture, drawn as it is (no circle around it).
+            addView(
+                ImageView(ctx).apply { setImageBitmap(custom); scaleType = ImageView.ScaleType.FIT_CENTER },
+                FrameLayout.LayoutParams(size, size),
+            )
+        } else {
+            background = Ui.circle(Ui.ACCENT)
+            addView(
+                ImageView(ctx).apply { setImageResource(R.drawable.ic_dot_plus) },
+                FrameLayout.LayoutParams(size / 2, size / 2, Gravity.CENTER),
+            )
+        }
+    }
+
     fun remove() {
         handler.removeCallbacks(fade)
         hideTrash()
@@ -76,7 +85,14 @@ class DotController(
         params = null
     }
 
-    /** After rotation the saved edge and height are applied to the new screen size. */
+    /** Size or picture changed in the settings: draw it again in place. */
+    fun refresh() {
+        if (view == null) return
+        remove()
+        show()
+    }
+
+    /** After rotation the saved position is applied to the new screen size. */
     fun reposition() {
         val p = params ?: return
         place(p)
@@ -96,8 +112,18 @@ class DotController(
 
     private fun place(p: WindowManager.LayoutParams) {
         val s = screen()
-        p.x = if (Prefs.dotRight(ctx)) s.width() - size - margin else margin
-        p.y = (Prefs.dotY(ctx) * (s.height() - size)).toInt().coerceIn(0, s.height() - size)
+        val freeW = (s.width() - size).coerceAtLeast(1)
+        val freeH = (s.height() - size).coerceAtLeast(1)
+        p.x = (Prefs.dotX(ctx) * freeW).toInt().coerceIn(0, freeW)
+        p.y = (Prefs.dotY(ctx) * freeH).toInt().coerceIn(0, freeH)
+    }
+
+    private fun savePosition() {
+        val p = params ?: return
+        val s = screen()
+        val freeW = (s.width() - size).coerceAtLeast(1)
+        val freeH = (s.height() - size).coerceAtLeast(1)
+        Prefs.setDotPos(ctx, p.x.toFloat() / freeW, p.y.toFloat() / freeH)
     }
 
     private fun scheduleFade() {
@@ -143,34 +169,17 @@ class DotController(
                 } else {
                     val hide = overTrash()
                     hideTrash()
-                    if (hide) onHide() else snap()
+                    if (hide) onHide() else savePosition()
                 }
                 scheduleFade()
             }
             MotionEvent.ACTION_CANCEL -> {
                 hideTrash()
-                if (dragging) snap()
+                if (dragging) savePosition()
                 scheduleFade()
             }
         }
         return true
-    }
-
-    private fun snap() {
-        val v = view ?: return
-        val p = params ?: return
-        val s = screen()
-        val right = p.x + size / 2 > s.width() / 2
-        val targetX = if (right) s.width() - size - margin else margin
-        ValueAnimator.ofInt(p.x, targetX).apply {
-            duration = 180
-            addUpdateListener {
-                p.x = it.animatedValue as Int
-                runCatching { wm.updateViewLayout(v, p) }
-            }
-            start()
-        }
-        Prefs.setDot(ctx, right, p.y.toFloat() / (s.height() - size).coerceAtLeast(1))
     }
 
     // --- the X that appears while dragging ---
@@ -199,13 +208,11 @@ class DotController(
         }
         wm.addView(t, p)
         trash = t
-        trashParams = p
     }
 
     private fun hideTrash() {
         trash?.let { runCatching { wm.removeView(it) } }
         trash = null
-        trashParams = null
     }
 
     private fun overTrash(): Boolean {

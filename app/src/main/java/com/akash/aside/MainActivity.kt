@@ -11,8 +11,21 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import com.akash.aside.overlay.DotIcon
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -101,7 +114,48 @@ fun SetupScreen(modifier: Modifier = Modifier) {
                 },
             )
         }
+
+        AppearanceSection()
     }
+}
+
+/** Size and picture of the dot. The running service redraws as soon as either changes. */
+@Composable
+private fun AppearanceSection() {
+    val ctx = LocalContext.current
+    var sizeDp by remember { mutableFloatStateOf(Prefs.dotSizeDp(ctx).toFloat()) }
+    var icon by remember { mutableStateOf(DotIcon.load(ctx)) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            if (DotIcon.import(ctx, uri)) icon = DotIcon.load(ctx)
+            else Toast.makeText(ctx, "That picture could not be read", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    Spacer(Modifier.height(8.dp))
+    Text("Dot", style = MaterialTheme.typography.titleMedium)
+    Box(Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+        val bmp = icon
+        if (bmp != null) {
+            Image(bmp.asImageBitmap(), contentDescription = "Your dot icon", modifier = Modifier.size(sizeDp.dp))
+        } else {
+            Box(Modifier.size(sizeDp.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
+                Text("+", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.titleLarge)
+            }
+        }
+    }
+    Slider(
+        value = sizeDp,
+        onValueChange = { sizeDp = it },
+        onValueChangeFinished = { Prefs.setDotSizeDp(ctx, sizeDp.roundToInt()) },
+        valueRange = Prefs.SIZE_MIN.toFloat()..Prefs.SIZE_MAX.toFloat(),
+    )
+    Text("Size ${sizeDp.roundToInt()}", style = MaterialTheme.typography.bodySmall)
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(onClick = { picker.launch("image/*") }) { Text("Choose icon") }
+        if (icon != null) OutlinedButton(onClick = { DotIcon.clear(ctx); icon = null }) { Text("Use default") }
+    }
+    Text("Drag the dot anywhere; it stays where you drop it.", style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable
