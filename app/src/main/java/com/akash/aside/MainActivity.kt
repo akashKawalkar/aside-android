@@ -31,6 +31,10 @@ class MainActivity : FragmentActivity() {
         super.onStart()
         // Coming back within two minutes (or rotating) does not ask again.
         locked = Prefs.lockEnabled(this) && LockState.needsUnlock()
+        // With the lock on, the app switcher must not show a picture of the notes.
+        setRecentsScreenshotEnabled(!Prefs.lockEnabled(this))
+        // Opening the app is a good moment to send anything waiting and see what is new.
+        com.akash.aside.cloud.Sync.kick(this)
     }
 
     override fun onStop() {

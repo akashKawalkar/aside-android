@@ -27,5 +27,6 @@ class AsideApp : Application() {
         // Anything typed when the app died is kept (or cleared if empty).
         AppScope.launch { repo.recoverOpen() }
         Sync.schedulePeriodic(this)
+        runCatching { Prefs.sealOldSecrets(this) }
     }
 }

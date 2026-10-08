@@ -36,8 +36,23 @@ object Prefs {
 
     // --- the night-job watchdog ---
     /** A GitHub token that can only start the nightly job. Kept in the app's private storage. */
-    fun githubToken(c: Context) = sp(c).getString("github_token", null)
-    fun setGithubToken(c: Context, v: String?) = sp(c).edit().apply { if (v.isNullOrBlank()) remove("github_token") else putString("github_token", v.trim()) }.apply()
+    fun githubToken(c: Context) = secret(sp(c).getString("github_token", null))
+    fun setGithubToken(c: Context, v: String?) = sp(c).edit().apply { if (v.isNullOrBlank()) remove("github_token") else putString("github_token", seal(v.trim())) }.apply()
+
+    // Secrets are stored sealed ("enc1:" + keystore-encrypted text). A value without the marker is an old plain one.
+    private const val SEALED = "enc1:"
+    private fun seal(v: String) = SEALED + SecretBox.seal(v)
+    private fun secret(raw: String?): String? = when {
+        raw == null -> null
+        raw.startsWith(SEALED) -> SecretBox.open(raw.removePrefix(SEALED))
+        else -> raw
+    }
+
+    /** Seals any secret that an earlier version stored in plain text. Safe to run every start. */
+    fun sealOldSecrets(c: Context) {
+        session(c)?.let { setSession(c, it) }
+        githubToken(c)?.let { setGithubToken(c, it) }
+    }
 
     /** Local dates (yyyy-MM-dd) on which the evening / morning check was done. */
     fun watchEveningDone(c: Context) = sp(c).getString("watch_evening", null)
@@ -69,14 +84,14 @@ object Prefs {
 
     fun session(c: Context): Session? {
         val p = sp(c)
-        val refresh = p.getString("refresh_token", null) ?: return null
-        return Session(p.getString("access_token", "").orEmpty(), refresh, p.getLong("expires_at", 0L), p.getString("email", "").orEmpty())
+        val refresh = secret(p.getString("refresh_token", null)) ?: return null
+        return Session(secret(p.getString("access_token", null)).orEmpty(), refresh, p.getLong("expires_at", 0L), p.getString("email", "").orEmpty())
     }
 
     fun setSession(c: Context, s: Session?) {
         val e = sp(c).edit()
         if (s == null) e.remove("access_token").remove("refresh_token").remove("expires_at").remove("email")
-        else e.putString("access_token", s.access).putString("refresh_token", s.refresh).putLong("expires_at", s.expiresAt).putString("email", s.email)
+        else e.putString("access_token", seal(s.access)).putString("refresh_token", seal(s.refresh)).putLong("expires_at", s.expiresAt).putString("email", s.email)
         e.apply()
     }
 
