@@ -67,6 +67,8 @@ fun SettingsPage(activity: FragmentActivity, repo: CaptureRepository, modifier: 
         HorizontalDivider()
         CloudSection(activity)
         HorizontalDivider()
+        NightJobSection()
+        HorizontalDivider()
         CaptureSection()
         HorizontalDivider()
         UsageSection()

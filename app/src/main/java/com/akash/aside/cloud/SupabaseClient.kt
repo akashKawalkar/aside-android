@@ -150,6 +150,20 @@ class SupabaseClient(
     /** Words typed into the search box, matched on the server against every note, including ones written elsewhere. */
     data class CloudNote(val clientId: String?, val kind: String, val text: String, val createdAt: Long)
 
+    /** Does the schedule for this day exist (made by the night job, or built by hand)? */
+    suspend fun scheduleReady(day: java.time.LocalDate): Boolean =
+        rpc("schedule_ready", JSONObject().put("p_day", day.toString())).trim().toBooleanStrictOrNull() ?: false
+
+    data class Failure(val id: Long, val step: String, val error: String)
+
+    /** The newest night-job step that failed for good (its retry failed too), or null. */
+    suspend fun latestFailure(): Failure? {
+        val arr = JSONArray(rpc("latest_failure", JSONObject()))
+        if (arr.length() == 0) return null
+        val o = arr.getJSONObject(0)
+        return Failure(o.getLong("id"), o.optString("step"), o.optString("error").takeUnless { it == "null" }.orEmpty())
+    }
+
     suspend fun searchNotes(query: String, limit: Int = 50): List<CloudNote> {
         val out = rpc("search_notes", JSONObject().put("p_query", query).put("p_limit", limit))
         val arr = JSONArray(out)

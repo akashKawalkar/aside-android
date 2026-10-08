@@ -14,8 +14,10 @@ object Notifications {
     // created blocked (IMPORTANCE_NONE), so it exists for the system but is never shown.
     private const val CH_STATUS = "capture_status_hidden"
     private const val CH_REMINDER = "capture_reminder"
+    private const val CH_FAILURE = "night_job_failure"
     const val ID_STATUS = 1
     const val ID_REMINDER = 2
+    const val ID_FAILURE = 3
 
     fun ensureChannels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
@@ -24,6 +26,7 @@ object Notifications {
             NotificationChannel(CH_STATUS, "Quick capture (keeps the dot alive, never shown)", NotificationManager.IMPORTANCE_NONE)
                 .apply { setShowBadge(false) }
         )
+        nm.createNotificationChannel(NotificationChannel(CH_FAILURE, "Night job failed", NotificationManager.IMPORTANCE_DEFAULT))
         nm.createNotificationChannel(
             NotificationChannel(CH_REMINDER, "Bring the dot back", NotificationManager.IMPORTANCE_LOW)
                 .apply { setShowBadge(false); setSound(null, null); enableVibration(false) }
@@ -57,6 +60,23 @@ object Notifications {
             .setContentIntent(serviceIntent(ctx, CaptureService.ACTION_START, 12, foreground = true))
             .build()
         ctx.getSystemService(NotificationManager::class.java).notify(ID_REMINDER, n)
+    }
+
+    /** The one notification that is meant to interrupt: the night job failed and its retry failed too. Never contains a note. */
+    fun postFailure(ctx: Context, step: String, reason: String) {
+        val open = PendingIntent.getActivity(
+            ctx, 13, Intent(ctx, com.akash.aside.MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val short = reason.lineSequence().firstOrNull().orEmpty().take(160)
+        val n = Notification.Builder(ctx, CH_FAILURE)
+            .setSmallIcon(R.drawable.ic_dot_plus)
+            .setContentTitle("The night job failed ($step)")
+            .setContentText(short.ifEmpty { "No reason was recorded" })
+            .setStyle(Notification.BigTextStyle().bigText(short.ifEmpty { "No reason was recorded" }))
+            .setAutoCancel(true)
+            .setContentIntent(open)
+            .build()
+        ctx.getSystemService(NotificationManager::class.java).notify(ID_FAILURE, n)
     }
 
     fun clearReminder(ctx: Context) {

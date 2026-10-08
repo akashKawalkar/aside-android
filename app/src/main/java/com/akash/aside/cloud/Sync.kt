@@ -47,6 +47,7 @@ class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
         if (!client.configured || !client.signedIn) return Result.success()   // nothing to send until signed in
         val items = SyncEngine(app.db.itemDao(), client).run()
         val usage = UsageSync(app.db.usageDao(), client).run()
+        com.akash.aside.watch.Watch.run(applicationContext, client)
         Prefs.setSyncResult(applicationContext, System.currentTimeMillis(), items.error ?: usage.error)
         return if (items.retryLater || usage.retryLater) Result.retry() else Result.success()
     }

@@ -34,6 +34,23 @@ object Prefs {
     fun lockEnabled(c: Context) = sp(c).getBoolean("lock_enabled", true)
     fun setLockEnabled(c: Context, v: Boolean) = sp(c).edit().putBoolean("lock_enabled", v).apply()
 
+    // --- the night-job watchdog ---
+    /** A GitHub token that can only start the nightly job. Kept in the app's private storage. */
+    fun githubToken(c: Context) = sp(c).getString("github_token", null)
+    fun setGithubToken(c: Context, v: String?) = sp(c).edit().apply { if (v.isNullOrBlank()) remove("github_token") else putString("github_token", v.trim()) }.apply()
+
+    /** Local dates (yyyy-MM-dd) on which the evening / morning check was done. */
+    fun watchEveningDone(c: Context) = sp(c).getString("watch_evening", null)
+    fun watchMorningDone(c: Context) = sp(c).getString("watch_morning", null)
+    fun setWatchDone(c: Context, evening: Boolean, day: String) = sp(c).edit().putString(if (evening) "watch_evening" else "watch_morning", day).apply()
+
+    fun lastFailureSeen(c: Context) = sp(c).getLong("last_failure_seen", 0L)
+    fun setLastFailureSeen(c: Context, v: Long) = sp(c).edit().putLong("last_failure_seen", v).apply()
+
+    /** One line for the Settings screen: what the watchdog last did. */
+    fun watchNote(c: Context) = sp(c).getString("watch_note", null)
+    fun setWatchNote(c: Context, v: String) = sp(c).edit().putString("watch_note", v).apply()
+
     // --- app usage tracking ---
     /** On by default, but nothing is read until the phone's "Usage access" is granted. */
     fun usageEnabled(c: Context) = sp(c).getBoolean("usage_enabled", true)

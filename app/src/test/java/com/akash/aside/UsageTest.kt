@@ -114,3 +114,41 @@ class UsageSyncTest {
         assertFalse("old" in dao.rows); assertTrue("new" in dao.rows)
     }
 }
+
+class WatchdogPlanTest {
+    private fun at(h: Int, m: Int, day: Int = 9) = java.time.LocalDateTime.of(2026, 10, day, h, m)
+    private val d9 = java.time.LocalDate.of(2026, 10, 9)
+    private fun decide(t: java.time.LocalDateTime, eve: java.time.LocalDate? = null, morn: java.time.LocalDate? = null) =
+        com.akash.aside.watch.WatchdogPlan.decide(t, eve, morn)
+
+    @Test fun `nothing happens in the middle of the day`() = assertNull(decide(at(14, 0)))
+
+    @Test fun `from ten past nine at night the check is for tomorrow`() {
+        assertNull(decide(at(21, 9)))
+        assertEquals(com.akash.aside.watch.WatchdogPlan.Day.TOMORROW, decide(at(21, 10))!!.day)
+        assertEquals("nightly", decide(at(22, 29))!!.kind)
+        assertNull(decide(at(22, 30)))
+    }
+
+    @Test fun `in the morning the check is for today and starts the retry kind`() {
+        val d = decide(at(8, 0))!!
+        assertEquals(com.akash.aside.watch.WatchdogPlan.Day.TODAY, d.day); assertEquals("morning_retry", d.kind)
+        assertNull(decide(at(7, 59))); assertNull(decide(at(10, 0)))
+    }
+
+    @Test fun `each check happens once a day`() {
+        assertNull(decide(at(21, 30), eve = d9))
+        assertEquals("nightly", decide(at(21, 30), eve = d9.minusDays(1))!!.kind)
+        assertNull(decide(at(8, 30), morn = d9))
+        assertEquals("morning_retry", decide(at(8, 30), eve = d9)!!.kind)   // the evening check does not use up the morning one
+    }
+
+    @Test fun `a failure is announced once and the first look only takes note`() {
+        val s = com.akash.aside.watch.WatchdogPlan::shouldAnnounce
+        assertFalse(s(0, 5))         // never looked before: do not announce an old failure
+        assertTrue(s(-1, 5))         // looked before and found nothing: this one is new
+        assertTrue(s(4, 5))
+        assertFalse(s(5, 5))         // already seen
+        assertFalse(s(4, null))
+    }
+}
