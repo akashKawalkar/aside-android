@@ -71,8 +71,13 @@ class EditorController(
 
     private val saveRunnable = Runnable { saveNow() }
 
-    fun show(kind: String = Kind.NOTE) {
-        if (root != null) { raiseKeyboard(); return }
+    private var voice: VoiceInput? = null
+    private var voiceBase = ""
+    private var status: TextView? = null
+
+    /** `voice = true` (long-press on the dot) opens it already listening, with no keyboard. */
+    fun show(kind: String = Kind.NOTE, voice: Boolean = false) {
+        if (root != null) { if (voice) startVoice() else raiseKeyboard(); return }
         id = repo.newId()
         chip = kind
         dueChoice = Due.NONE
@@ -94,6 +99,13 @@ class EditorController(
         card.addView(et, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = Ui.dp(ctx, 8)
         })
+        val st = TextView(ctx).apply {
+            textSize = 13f
+            setTextColor(Ui.ACCENT)
+            visibility = android.view.View.GONE
+        }
+        status = st
+        card.addView(st)
         card.addView(bottomRow(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = Ui.dp(ctx, 6)
         })
@@ -109,13 +121,50 @@ class EditorController(
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT,
         ).apply {
-            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or
-                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            softInputMode = (if (voice) WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN
+            else WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE) or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         }
         wm.addView(r, params)
         root = r
         renderChips()
-        raiseKeyboard()
+        if (voice) startVoice() else raiseKeyboard()
+    }
+
+    // --- voice ---
+
+    private fun say(text: String?) {
+        status?.apply { this.text = text.orEmpty(); visibility = if (text.isNullOrEmpty()) android.view.View.GONE else android.view.View.VISIBLE }
+    }
+
+    private fun startVoice() {
+        val et = edit ?: return
+        if (ctx.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            say("Allow the microphone for Aside (Settings -> Voice) to talk")
+            raiseKeyboard()
+            return
+        }
+        voiceBase = et.text.toString()
+        val v = voice ?: VoiceInput(ctx, object : VoiceInput.Listener {
+            override fun onPartial(text: String) = fill(text)
+            override fun onFinal(text: String) { fill(text); say(null); dismiss() }          // stopped speaking: keep it and close
+            override fun onError(message: String, nothingHeard: Boolean) {
+                if (nothingHeard && et.text.isBlank()) {
+                    say(message)
+                    handler.postDelayed({ dismiss() }, 1200)
+                } else {
+                    say(message)
+                    raiseKeyboard()                                                              // fall back to typing
+                }
+            }
+        }).also { voice = it }
+        say("Listening…")
+        v.start()
+    }
+
+    private fun fill(spoken: String) {
+        val et = edit ?: return
+        et.setText(com.akash.aside.capture.VoiceText.merge(voiceBase, spoken))
+        et.setSelection(et.text.length)
     }
 
     /** Closes the window and keeps what was typed. */
@@ -127,6 +176,7 @@ class EditorController(
         val due = dueEpoch()
         val myId = id
         handler.removeCallbacksAndMessages(null)
+        voice?.stop(); voice = null; status = null
         if (et != null) imm.hideSoftInputFromWindow(et.windowToken, 0)
         runCatching { wm.removeView(r) }
         root = null
@@ -190,6 +240,8 @@ class EditorController(
         gravity = Gravity.CENTER_VERTICAL
         val paste = chipView("Paste") { pasteClipboard() }.also { style(it, false) }
         addView(paste)
+        val speak = chipView("Speak") { if (voice?.listening == true) { voice?.stop(); say(null); raiseKeyboard() } else startVoice() }.also { style(it, false) }
+        addView(speak, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = Ui.dp(ctx, 6) })
         val due = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
         for ((d, label) in listOf(Due.TODAY to "Today", Due.TOMORROW to "Tomorrow", Due.PICK to "Pick", Due.NONE to "No date")) {
             val c = chipView(label) { pickDue(d) }

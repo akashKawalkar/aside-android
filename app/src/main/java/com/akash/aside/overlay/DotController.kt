@@ -26,6 +26,7 @@ class DotController(
     private val wm: WindowManager,
     private val onTap: () -> Unit,
     private val onHide: () -> Unit,
+    private val onLongPress: () -> Unit,
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val slop = ViewConfiguration.get(ctx).scaledTouchSlop
@@ -79,6 +80,7 @@ class DotController(
 
     fun remove() {
         handler.removeCallbacks(fade)
+        handler.removeCallbacks(longPress)
         hideTrash()
         view?.let { runCatching { wm.removeView(it) } }
         view = null
@@ -136,6 +138,14 @@ class DotController(
     private var startX = 0
     private var startY = 0
     private var dragging = false
+    private var longPressed = false
+    private val longPress = Runnable {
+        if (!dragging) {
+            longPressed = true
+            view?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            onLongPress()
+        }
+    }
 
     private fun onTouch(v: View, e: MotionEvent): Boolean {
         val p = params ?: return false
@@ -147,12 +157,15 @@ class DotController(
                 downX = e.rawX; downY = e.rawY
                 startX = p.x; startY = p.y
                 dragging = false
+                longPressed = false
+                handler.postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
             }
             MotionEvent.ACTION_MOVE -> {
                 val dx = e.rawX - downX
                 val dy = e.rawY - downY
                 if (!dragging && hypot(dx, dy) > slop) {
                     dragging = true
+                    handler.removeCallbacks(longPress)
                     showTrash()
                 }
                 if (dragging) {
@@ -164,7 +177,10 @@ class DotController(
                 }
             }
             MotionEvent.ACTION_UP -> {
-                if (!dragging) {
+                handler.removeCallbacks(longPress)
+                if (longPressed) {
+                    // the long press already opened the voice window
+                } else if (!dragging) {
                     onTap()
                 } else {
                     val hide = overTrash()
@@ -174,6 +190,7 @@ class DotController(
                 scheduleFade()
             }
             MotionEvent.ACTION_CANCEL -> {
+                handler.removeCallbacks(longPress)
                 hideTrash()
                 if (dragging) savePosition()
                 scheduleFade()

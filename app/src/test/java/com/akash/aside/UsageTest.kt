@@ -152,3 +152,15 @@ class WatchdogPlanTest {
         assertFalse(s(4, null))
     }
 }
+
+class VoiceTextTest {
+    private val m = com.akash.aside.capture.VoiceText::merge
+
+    @Test fun `spoken words go after what is written with one space`() {
+        assertEquals("call mom", m("", "call mom"))
+        assertEquals("buy milk and eggs", m("buy milk", " and eggs "))
+        assertEquals("buy milk and eggs", m("buy milk  ", "and eggs"))
+    }
+
+    @Test fun `nothing said changes nothing`() = assertEquals("keep this", m("keep this", "   "))
+}

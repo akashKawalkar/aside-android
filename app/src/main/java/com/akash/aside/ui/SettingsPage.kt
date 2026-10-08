@@ -71,6 +71,8 @@ fun SettingsPage(activity: FragmentActivity, repo: CaptureRepository, modifier: 
         HorizontalDivider()
         CaptureSection()
         HorizontalDivider()
+        VoiceSection()
+        HorizontalDivider()
         UsageSection()
         HorizontalDivider()
         AppearanceSection()

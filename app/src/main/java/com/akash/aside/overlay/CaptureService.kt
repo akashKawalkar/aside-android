@@ -36,7 +36,7 @@ class CaptureService : Service() {
         }
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val repo = (application as AsideApp).repo
-        val d = DotController(this, wm, onTap = { openEditor() }, onHide = { hideForNow() })
+        val d = DotController(this, wm, onTap = { openEditor() }, onHide = { hideForNow() }, onLongPress = { openEditor(voice = true) })
         dot = d
         editor = EditorController(this, wm, repo) { hadText ->
             d.show()
@@ -55,9 +55,9 @@ class CaptureService : Service() {
         return START_STICKY
     }
 
-    private fun openEditor(kind: String = Kind.NOTE) {
+    private fun openEditor(kind: String = Kind.NOTE, voice: Boolean = false) {
         dot?.remove()
-        editor?.show(kind)
+        editor?.show(kind, voice)
     }
 
     /** Dragged to the X (or "Hide"): gone now, one quiet reminder in 15 minutes. */
