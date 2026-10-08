@@ -13,6 +13,7 @@ import com.akash.aside.AsideApp
 import com.akash.aside.Notifications
 import com.akash.aside.Prefs
 import com.akash.aside.ReminderScheduler
+import com.akash.aside.data.Kind
 
 /** Keeps the dot on screen. Android requires a foreground service (and its quiet notification) for that. */
 class CaptureService : Service() {
@@ -48,15 +49,15 @@ class CaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_OPEN -> openEditor()
+            ACTION_OPEN -> openEditor(intent.getStringExtra(EXTRA_KIND) ?: Kind.NOTE)
             ACTION_HIDE -> hideForNow()
         }
         return START_STICKY
     }
 
-    private fun openEditor() {
+    private fun openEditor(kind: String = Kind.NOTE) {
         dot?.remove()
-        editor?.show()
+        editor?.show(kind)
     }
 
     /** Dragged to the X (or "Hide"): gone now, one quiet reminder in 15 minutes. */
@@ -85,9 +86,17 @@ class CaptureService : Service() {
         const val ACTION_START = "com.akash.aside.START"
         const val ACTION_OPEN = "com.akash.aside.OPEN"
         const val ACTION_HIDE = "com.akash.aside.HIDE"
+        const val EXTRA_KIND = "kind"
 
         fun start(ctx: Context) {
             ctx.startForegroundService(Intent(ctx, CaptureService::class.java).setAction(ACTION_START))
+        }
+
+        /** Starts the service if needed and opens the input window (used by the tile and the icon shortcuts). */
+        fun open(ctx: Context, kind: String = Kind.NOTE) {
+            ctx.startForegroundService(
+                Intent(ctx, CaptureService::class.java).setAction(ACTION_OPEN).putExtra(EXTRA_KIND, kind)
+            )
         }
 
         fun stop(ctx: Context) {

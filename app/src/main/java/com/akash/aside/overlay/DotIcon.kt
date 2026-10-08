@@ -17,10 +17,9 @@ object DotIcon {
 
     fun load(ctx: Context): Bitmap? = file(ctx).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.path) }
 
-    /** Reads any picture the phone can decode, shrinks it, keeps it. Returns false if it could not be read. */
-    fun import(ctx: Context, uri: Uri): Boolean = try {
-        val source = ImageDecoder.createSource(ctx.contentResolver, uri)
-        val bitmap = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+    /** Reads any picture the phone can decode and shrinks it. Null if it could not be read. */
+    fun decode(ctx: Context, uri: Uri): Bitmap? = try {
+        ImageDecoder.decodeBitmap(ImageDecoder.createSource(ctx.contentResolver, uri)) { decoder, info, _ ->
             val big = max(info.size.width, info.size.height)
             if (big > MAX_PX) {
                 val scale = MAX_PX.toFloat() / big
@@ -28,11 +27,16 @@ object DotIcon {
             }
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
         }
+    } catch (_: Exception) {
+        null
+    }
+
+    /** Keeps the picture as the dot's icon. Returns false if it could not be read. */
+    fun import(ctx: Context, uri: Uri): Boolean {
+        val bitmap = decode(ctx, uri) ?: return false
         file(ctx).outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         Prefs.bumpIconVersion(ctx)
-        true
-    } catch (_: Exception) {
-        false
+        return true
     }
 
     fun clear(ctx: Context) {

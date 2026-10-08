@@ -71,10 +71,10 @@ class EditorController(
 
     private val saveRunnable = Runnable { saveNow() }
 
-    fun show() {
+    fun show(kind: String = Kind.NOTE) {
         if (root != null) { raiseKeyboard(); return }
         id = repo.newId()
-        chip = Kind.NOTE
+        chip = kind
         dueChoice = Due.NONE
         pickedDate = null
 

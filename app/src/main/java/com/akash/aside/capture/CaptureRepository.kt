@@ -53,6 +53,30 @@ class CaptureRepository(
         true
     }
 
+    fun observeVisible() = dao.observeVisible()
+
+    fun observePending() = dao.observePending()
+
+    /** An edit made inside the app. A sent item becomes unsent again so the change goes out. Blank text is refused. */
+    suspend fun edit(id: String, raw: String, kind: String, dueAt: Long?): Boolean = lock.withLock {
+        val existing = dao.get(id) ?: return@withLock false
+        val text = raw.trim()
+        if (text.isEmpty()) return@withLock false
+        dao.upsert(
+            existing.copy(
+                kind = kind, text = text, dueAt = if (kind == Kind.TASK) dueAt else null,
+                state = State.COMMITTED, updatedAt = now(),
+            )
+        )
+        true
+    }
+
+    /** Hidden at once; kept until the cloud has been told, so a sent item can be removed there too. */
+    suspend fun delete(id: String) = lock.withLock {
+        val existing = dao.get(id) ?: return@withLock
+        dao.upsert(existing.copy(deleted = true, state = State.COMMITTED, updatedAt = now()))
+    }
+
     /** After a crash or a killed app: whatever was typed is kept, whatever was empty is cleared. */
     suspend fun recoverOpen(): Int {
         var kept = 0

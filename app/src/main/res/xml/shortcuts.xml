@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_note"
+        android:enabled="true"
+        android:icon="@drawable/ic_dot_plus"
+        android:shortcutShortLabel="@string/shortcut_note">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.akash.aside"
+            android:targetClass="com.akash.aside.LaunchActivity">
+            <extra android:name="kind" android:value="note" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="new_journal"
+        android:enabled="true"
+        android:icon="@drawable/ic_dot_plus"
+        android:shortcutShortLabel="@string/shortcut_journal">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.akash.aside"
+            android:targetClass="com.akash.aside.LaunchActivity">
+            <extra android:name="kind" android:value="journal" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="new_task"
+        android:enabled="true"
+        android:icon="@drawable/ic_dot_plus"
+        android:shortcutShortLabel="@string/shortcut_task">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.akash.aside"
+            android:targetClass="com.akash.aside.LaunchActivity">
+            <extra android:name="kind" android:value="task" />
+        </intent>
+    </shortcut>
+</shortcuts>

@@ -2,6 +2,9 @@ package com.akash.aside
 
 import com.akash.aside.capture.CaptureRepository
 import com.akash.aside.capture.Prefix
+import com.akash.aside.capture.Search
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import com.akash.aside.data.Item
 import com.akash.aside.data.ItemDao
 import com.akash.aside.data.Kind
@@ -19,6 +22,56 @@ private class FakeDao : ItemDao {
     override suspend fun get(id: String) = rows[id]
     override suspend fun remove(id: String) { rows.remove(id) }
     override suspend fun open() = rows.values.filter { it.state == State.OPEN }
+    override fun observeVisible(): Flow<List<Item>> = flowOf(rows.values.filter { it.state != State.OPEN && !it.deleted })
+    override fun observePending(): Flow<Int> = flowOf(rows.values.count { it.state == State.COMMITTED })
+}
+
+class SearchTest {
+    @Test fun `empty search matches everything`() = assertTrue(Search.matchesAny("anything", "  "))
+
+    @Test fun `any word is enough and case does not matter`() {
+        assertTrue(Search.matchesAny("Call Rahul about tennis", "TENNIS dentist"))
+        assertFalse(Search.matchesAny("Call Rahul about tennis", "dentist"))
+    }
+}
+
+class EditDeleteTest {
+    private val dao = FakeDao()
+    private var clock = 1000L
+    private val repo = CaptureRepository(dao) { clock++ }
+
+    @Test fun `editing converts a note into a task with a due date`() = runBlocking {
+        repo.commit("a", "call bank", Kind.NOTE, null)
+        assertTrue(repo.edit("a", " call the bank ", Kind.TASK, 9000L))
+        val item = dao.rows["a"]!!
+        assertEquals(Kind.TASK, item.kind); assertEquals("call the bank", item.text); assertEquals(9000L, item.dueAt)
+    }
+
+    @Test fun `editing a sent item makes it unsent again`() = runBlocking {
+        repo.commit("a", "idea", Kind.NOTE, null)
+        dao.rows["a"] = dao.rows["a"]!!.copy(state = State.SYNCED)
+        repo.edit("a", "better idea", Kind.NOTE, null)
+        assertEquals(State.COMMITTED, dao.rows["a"]!!.state)
+    }
+
+    @Test fun `turning a task back into a note drops the date`() = runBlocking {
+        repo.commit("a", "x", Kind.TASK, 5000L)
+        repo.edit("a", "x", Kind.NOTE, 5000L)
+        assertNull(dao.rows["a"]!!.dueAt)
+    }
+
+    @Test fun `blank edits are refused`() = runBlocking {
+        repo.commit("a", "keep me", Kind.NOTE, null)
+        assertFalse(repo.edit("a", "  ", Kind.NOTE, null))
+        assertEquals("keep me", dao.rows["a"]!!.text)
+    }
+
+    @Test fun `delete hides the item but keeps it to tell the cloud`() = runBlocking {
+        repo.commit("a", "bye", Kind.NOTE, null)
+        repo.delete("a")
+        assertTrue(dao.rows["a"]!!.deleted)
+        assertEquals(State.COMMITTED, dao.rows["a"]!!.state)
+    }
 }
 
 class PrefixTest {

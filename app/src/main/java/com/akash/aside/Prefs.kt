@@ -29,4 +29,8 @@ object Prefs {
     /** Bumped whenever the custom icon file changes, so a running service knows to redraw. */
     fun iconVersion(c: Context) = sp(c).getInt(KEY_ICON_VERSION, 0)
     fun bumpIconVersion(c: Context) = sp(c).edit().putInt(KEY_ICON_VERSION, iconVersion(c) + 1).apply()
+
+    /** Opening the app asks for fingerprint / PIN. The dot and the input window are never locked. */
+    fun lockEnabled(c: Context) = sp(c).getBoolean("lock_enabled", true)
+    fun setLockEnabled(c: Context, v: Boolean) = sp(c).edit().putBoolean("lock_enabled", v).apply()
 }

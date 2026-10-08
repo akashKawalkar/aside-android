@@ -8,6 +8,7 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Upsert
+import kotlinx.coroutines.flow.Flow
 
 object Kind {
     const val NOTE = "note"
@@ -46,6 +47,13 @@ interface ItemDao {
     @Query("DELETE FROM item WHERE id = :id") suspend fun remove(id: String)
 
     @Query("SELECT * FROM item WHERE state = 'open' ORDER BY updatedAt DESC") suspend fun open(): List<Item>
+
+    /** Everything the user has finished writing and not deleted, newest first. */
+    @Query("SELECT * FROM item WHERE state != 'open' AND deleted = 0 ORDER BY createdAt DESC")
+    fun observeVisible(): Flow<List<Item>>
+
+    /** How many finished items are still waiting to be sent. */
+    @Query("SELECT COUNT(*) FROM item WHERE state = 'committed'") fun observePending(): Flow<Int>
 }
 
 @Database(entities = [Item::class], version = 1, exportSchema = false)
