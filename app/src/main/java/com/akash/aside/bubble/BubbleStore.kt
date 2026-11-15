@@ -72,4 +72,8 @@ object BubbleStore {
     /** After an answer the ring starts counting from zero again. */
     fun ringResetAt(c: Context) = sp(c).getLong("ring_reset_at", 0L)
     fun setRingResetAt(c: Context, v: Long) = sp(c).edit().putLong("ring_reset_at", v).apply()
+
+    /** "Not now" on a daily sheet or the anomaly question hides its glow until this time (it is asked again after). */
+    fun snoozedUntil(c: Context) = sp(c).getLong("snoozed_until", 0L)
+    fun setSnoozedUntil(c: Context, v: Long) = sp(c).edit().putLong("snoozed_until", v).apply()
 }

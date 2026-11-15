@@ -1,7 +1,14 @@
 package com.akash.aside.overlay
 
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BlurMaskFilter
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -36,33 +43,69 @@ class DotController(
     private var params: WindowManager.LayoutParams? = null
     private var trash: TextView? = null
 
-    /** A ring around the dot (drawn over it, so a custom picture still works). Null: no ring. */
+    /** The glow color, or null for no glow. The glow is a soft halo shaped like the dot's own picture, drawn behind it. */
     private var ring: Int? = null
+    private var glowView: ImageView? = null
+    private var breathing: ObjectAnimator? = null
+
+    /** Room around the picture for the halo, only while there is one (the picture itself never moves). */
+    private val pad get() = if (ring != null) (size * GLOW_PAD).toInt() else 0
 
     private val fade = Runnable { if (ring == null) view?.animate()?.alpha(IDLE_ALPHA)?.setDuration(400)?.start() }
 
-    /** Colors the ring, or removes it with null. While it is colored the dot stays at full opacity. */
+    /** Makes the dot glow in this color, or stops the glow with null. While it glows the dot stays at full opacity. */
     fun setRing(color: Int?) {
+        val hadGlow = ring != null
         ring = color
-        applyRing()
+        if (view == null) return
+        if (hadGlow != (color != null)) refresh() else applyGlow()
     }
 
-    private fun applyRing() {
+    private fun applyGlow() {
         val v = view ?: return
         val c = ring
+        breathing?.cancel()
+        breathing = null
         if (c == null) {
-            v.foreground = null
             scheduleFade()
-        } else {
-            v.foreground = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(android.graphics.Color.TRANSPARENT)
-                setStroke(Ui.dp(ctx, 4), c)
-            }
-            handler.removeCallbacks(fade)
-            v.animate().cancel()
-            v.alpha = 1f
+            return
         }
+        glowView?.setImageBitmap(glowBitmap(c))
+        handler.removeCallbacks(fade)
+        v.animate().cancel()
+        v.alpha = 1f
+        glowView?.let {
+            breathing = ObjectAnimator.ofFloat(it, View.ALPHA, 0.45f, 1f).apply {
+                duration = 1400
+                repeatCount = ValueAnimator.INFINITE
+                repeatMode = ValueAnimator.REVERSE
+                start()
+            }
+        }
+    }
+
+    /** A blurred, tinted copy of the picture's outline (or of the plain circle), with room for the halo around it. */
+    private fun glowBitmap(color: Int): Bitmap {
+        val total = size + 2 * pad
+        val shape = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val sc = Canvas(shape)
+        val custom = DotIcon.load(ctx)
+        if (custom != null) {
+            val k = minOf(size.toFloat() / custom.width, size.toFloat() / custom.height)
+            val w = (custom.width * k).toInt()
+            val h = (custom.height * k).toInt()
+            sc.drawBitmap(custom, null, Rect((size - w) / 2, (size - h) / 2, (size + w) / 2, (size + h) / 2), Paint(Paint.FILTER_BITMAP_FLAG))
+        } else {
+            sc.drawCircle(size / 2f, size / 2f, size / 2f, Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = android.graphics.Color.BLACK })
+        }
+        val offset = IntArray(2)
+        val soft = shape.extractAlpha(Paint().apply { maskFilter = BlurMaskFilter(pad * 0.8f, BlurMaskFilter.Blur.NORMAL) }, offset)
+        val out = Bitmap.createBitmap(total, total, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
+        // Twice, so the halo is strong enough to read on a busy screen yet still soft at its edge.
+        repeat(2) { canvas.drawBitmap(soft, (pad + offset[0]).toFloat(), (pad + offset[1]).toFloat(), paint) }
+        return out
     }
 
     /** One soft tick: a threshold was crossed. */
@@ -79,9 +122,10 @@ class DotController(
         size = Ui.dp(ctx, Prefs.dotSizeDp(ctx))
         val v = buildView()
         val p = WindowManager.LayoutParams(
-            size, size,
+            size + 2 * pad, size + 2 * pad,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
         ).apply { gravity = Gravity.TOP or Gravity.START }
         place(p)
@@ -90,28 +134,38 @@ class DotController(
         view = v
         params = p
         scheduleFade()
-        applyRing()
+        applyGlow()
     }
 
     private fun buildView(): FrameLayout = FrameLayout(ctx).apply {
         contentDescription = "Quick capture"
+        glowView = null
+        if (pad > 0) {
+            val g = ImageView(ctx)
+            glowView = g
+            addView(g, FrameLayout.LayoutParams(size + 2 * pad, size + 2 * pad))
+        }
         val custom = DotIcon.load(ctx)
         if (custom != null) {
             // The user's own picture, drawn as it is (no circle around it).
             addView(
                 ImageView(ctx).apply { setImageBitmap(custom); scaleType = ImageView.ScaleType.FIT_CENTER },
-                FrameLayout.LayoutParams(size, size),
+                FrameLayout.LayoutParams(size, size, Gravity.CENTER),
             )
         } else {
-            background = Ui.circle(Ui.ACCENT)
             addView(
-                ImageView(ctx).apply { setImageResource(R.drawable.ic_dot_plus) },
-                FrameLayout.LayoutParams(size / 2, size / 2, Gravity.CENTER),
+                FrameLayout(ctx).apply {
+                    background = Ui.circle(Ui.ACCENT)
+                    addView(ImageView(ctx).apply { setImageResource(R.drawable.ic_dot_plus) }, FrameLayout.LayoutParams(size / 2, size / 2, Gravity.CENTER))
+                },
+                FrameLayout.LayoutParams(size, size, Gravity.CENTER),
             )
         }
     }
 
     fun remove() {
+        breathing?.cancel()
+        breathing = null
         handler.removeCallbacks(fade)
         handler.removeCallbacks(longPress)
         hideTrash()
@@ -149,8 +203,8 @@ class DotController(
         val s = screen()
         val freeW = (s.width() - size).coerceAtLeast(1)
         val freeH = (s.height() - size).coerceAtLeast(1)
-        p.x = (Prefs.dotX(ctx) * freeW).toInt().coerceIn(0, freeW)
-        p.y = (Prefs.dotY(ctx) * freeH).toInt().coerceIn(0, freeH)
+        p.x = (Prefs.dotX(ctx) * freeW).toInt().coerceIn(0, freeW) - pad
+        p.y = (Prefs.dotY(ctx) * freeH).toInt().coerceIn(0, freeH) - pad
     }
 
     private fun savePosition() {
@@ -158,7 +212,7 @@ class DotController(
         val s = screen()
         val freeW = (s.width() - size).coerceAtLeast(1)
         val freeH = (s.height() - size).coerceAtLeast(1)
-        Prefs.setDotPos(ctx, p.x.toFloat() / freeW, p.y.toFloat() / freeH)
+        Prefs.setDotPos(ctx, (p.x + pad).toFloat() / freeW, (p.y + pad).toFloat() / freeH)
     }
 
     private fun scheduleFade() {
@@ -203,8 +257,8 @@ class DotController(
                 }
                 if (dragging) {
                     val s = screen()
-                    p.x = (startX + dx).toInt().coerceIn(0, s.width() - size)
-                    p.y = (startY + dy).toInt().coerceIn(0, s.height() - size)
+                    p.x = (startX + dx).toInt().coerceIn(-pad, s.width() - size - pad)
+                    p.y = (startY + dy).toInt().coerceIn(-pad, s.height() - size - pad)
                     wm.updateViewLayout(v, p)
                     trash?.background = Ui.circle(if (overTrash()) Ui.DANGER else Ui.CHIP)
                 }
@@ -268,14 +322,15 @@ class DotController(
     private fun overTrash(): Boolean {
         val p = params ?: return false
         val s = screen()
-        val dotCx = p.x + size / 2f
-        val dotCy = p.y + size / 2f
+        val dotCx = p.x + pad + size / 2f
+        val dotCy = p.y + pad + size / 2f
         val trashCx = s.width() / 2f
         val trashCy = s.height() - trashBottom - trashSize / 2f
         return hypot(dotCx - trashCx, dotCy - trashCy) < trashSize
     }
 
     companion object {
+        private const val GLOW_PAD = 0.3f          // halo room, as a share of the dot size
         private const val IDLE_ALPHA = 0.4f
         private const val FADE_AFTER_MS = 2500L
     }

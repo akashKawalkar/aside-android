@@ -40,14 +40,15 @@ sealed interface Ask {
 }
 
 /**
- * The question sheets, opened by tapping a colored dot. Plain Views over any app, like the input window.
- * Closing without answering (tap outside, Back) saves nothing; the ring stays until it is answered.
- * `onAnswer(kind, payload)` is called once, when the user answers.
+ * The question sheets, opened by tapping a glowing dot. Plain Views over any app, like the input window.
+ * Closing without answering (tap outside, Back) saves nothing; the glow stays until it is answered or dismissed.
+ * `onAnswer(kind, payload)` is called once, when the user answers; `onNotNow(ask)` when they choose "Not now".
  */
 class QuestionController(
     private val ctx: Context,
     private val wm: WindowManager,
     private val onAnswer: (kind: String, payload: JSONObject) -> Unit,
+    private val onNotNow: (Ask) -> Unit,
     private val onClosed: () -> Unit,
 ) {
     private val handler = Handler(Looper.getMainLooper())
@@ -85,6 +86,11 @@ class QuestionController(
             is Ask.Evening -> evening(card, ask)
             is Ask.Anomaly -> anomaly(card, ask)
         }
+        card.addView(text("Not now", 14f, Ui.MUTED).apply {
+            gravity = Gravity.END
+            setPadding(Ui.dp(ctx, 8), Ui.dp(ctx, 10), Ui.dp(ctx, 8), Ui.dp(ctx, 4))
+            setOnClickListener { onNotNow(ask); dismiss() }
+        }, lp(top = 8))
         val r = Root(ctx) { dismiss() }
         r.setBackgroundColor(Ui.SCRIM)
         r.setOnClickListener { dismiss() }

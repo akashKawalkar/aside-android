@@ -18,20 +18,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.akash.aside.bubble.BubbleStore
 
-/** The colored ring around the dot, the apps that feed it, and what each typed prefix does. */
+/** The glow around the dot, the apps that feed it, and what each typed prefix does. */
 @Composable
 fun BubbleSection() {
     val ctx = LocalContext.current
     var enabled by remember { mutableStateOf(BubbleStore.enabled(ctx)) }
     var picking by remember { mutableStateOf(false) }
 
-    Text("Dot ring and questions", style = MaterialTheme.typography.titleMedium)
+    Text("Dot glow and questions", style = MaterialTheme.typography.titleMedium)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
         Column(Modifier.weight(1f)) {
-            Text("Color the dot when I am stuck on flagged apps")
+            Text("Make the dot glow when I am stuck on flagged apps")
             Text(
-                "Amber after about 10 minutes in the last 30, red after about 30. Blue when a question is waiting. " +
-                    "No sound, no notification: tap the dot when you want to answer. Needs Usage access.",
+                "Amber glow after about 10 minutes in the last 30, red after about 30. Blue when a question is waiting. " +
+                    "No sound, no notification: tap the dot when you want to answer, or choose Not now to dismiss it. " +
+                    "Switch this off for no glow at all. Needs Usage access.",
                 style = MaterialTheme.typography.bodySmall,
             )
         }

@@ -20,6 +20,8 @@ interface AnswerRemote {
  */
 object BubbleLogic {
     const val WINDOW_MS = 30 * 60_000L
+    /** How long "Not now" hides a daily sheet or the anomaly question. */
+    const val SNOOZE_MS = 3 * 60 * 60_000L
     const val AMBER_MS = 10 * 60_000L
     const val RED_MS = 30 * 60_000L
     const val MAX_PROMPTS_PER_DAY = 3

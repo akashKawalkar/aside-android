@@ -116,8 +116,9 @@ class BubbleWatcher(
         val rose = d > distraction && d != BubbleLogic.Ring.NONE
         distraction = d
 
-        anomaly = BubbleStore.anomalyWaiting(ctx)
-        sheet = BubbleLogic.sheetWaiting(
+        val snoozed = nowMs < BubbleStore.snoozedUntil(ctx)
+        anomaly = !snoozed && BubbleStore.anomalyWaiting(ctx)
+        sheet = if (snoozed) null else BubbleLogic.sheetWaiting(
             zdt, BubbleStore.morningDone(ctx), BubbleStore.eveningDone(ctx),
             BubbleStore.sleepFor(ctx, zdt.toLocalDate()) != null,
         )
@@ -173,6 +174,22 @@ class BubbleWatcher(
         val apps = byApp.entries.sortedByDescending { it.value }
             .joinToString(" + ") { runCatching { pm.getApplicationLabel(pm.getApplicationInfo(it.key, 0)).toString() }.getOrDefault(it.key) }
         return Ask.Distraction(planLine, (byApp.values.sum() / 60_000L).toInt(), apps, if (distraction == BubbleLogic.Ring.RED) "red" else "amber")
+    }
+
+    /**
+     * "Not now": the glow goes away without an answer. A distraction glow starts counting from zero again; a daily sheet or
+     * the anomaly question is hidden for a few hours and asked again after. Logged as a receptivity signal.
+     */
+    fun notNow(ask: Ask) {
+        val nowMs = System.currentTimeMillis()
+        logTap("dismissed", current)
+        if (ask is Ask.Distraction) {
+            BubbleStore.setRingResetAt(ctx, nowMs)
+            activePrompt = false
+        } else {
+            BubbleStore.setSnoozedUntil(ctx, nowMs + BubbleLogic.SNOOZE_MS)
+        }
+        poll()
     }
 
     /** The dot was tapped while colored: a receptivity signal. */

@@ -50,7 +50,7 @@ class CaptureService : Service() {
         }
         val b = BubbleWatcher(this, d, (application as AsideApp).db.answerDao())
         bubble = b
-        questions = QuestionController(this, wm, onAnswer = { kind, payload -> b.answered(kind, payload) }, onClosed = { d.show() })
+        questions = QuestionController(this, wm, onAnswer = { kind, payload -> b.answered(kind, payload) }, onNotNow = { b.notNow(it) }, onClosed = { d.show() })
         d.show()
         b.start()
         Prefs.raw(this).registerOnSharedPreferenceChangeListener(prefListener)
