@@ -260,7 +260,13 @@ class QuestionController(
         card.addView(text("Any naps today?", 14f, Ui.MUTED), lp(top = 10))
         val napRow = row()
         val napText = text("", 13f, Ui.ACCENT).apply { visibility = View.GONE }
-        val none = chip("None") { napNone = true; naps.let { while (it.length() > 0) it.remove(0) }; napText.visibility = View.GONE }
+        lateinit var none: TextView
+        none = chip("None") {
+            napNone = !napNone                                      // tap again to take it back
+            if (napNone) { while (naps.length() > 0) naps.remove(0); napText.visibility = View.GONE }
+            paint(none, napNone)
+        }
+        paint(none, false)
         val add = chip("Add nap") {
             pickTime("Nap started at", LocalTime.of(14, 0)) { t ->
                 val lengths = intArrayOf(15, 30, 45, 60, 90, 120)
@@ -269,6 +275,7 @@ class QuestionController(
                     .setItems(lengths.map { "$it min" }.toTypedArray()) { _, i ->
                         naps.put(JSONObject().put("start", t.format(clock)).put("minutes", lengths[i]))
                         napNone = false
+                        paint(none, false)
                         napText.text = (0 until naps.length()).joinToString("  ") { n -> naps.getJSONObject(n).let { o -> "${o.getString("start")} (${o.getInt("minutes")}m)" } }
                         napText.visibility = View.VISIBLE
                     }.create()
