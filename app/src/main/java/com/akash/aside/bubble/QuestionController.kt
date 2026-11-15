@@ -232,7 +232,7 @@ class QuestionController(
         d.show()
     }
 
-    // --- evening: workout, meditation, naps ---
+    // --- evening: workout, meditation, naps, planned bedtime ---
 
     private fun evening(card: LinearLayout, a: Ask.Evening) {
         val picked = HashMap<String, String>()
@@ -288,8 +288,22 @@ class QuestionController(
         card.addView(napRow, lp(top = 4))
         card.addView(napText, lp(top = 4))
 
+        card.addView(text("When do you plan to sleep tonight?", 14f, Ui.MUTED), lp(top = 10))
+        var intended: LocalTime? = null
+        lateinit var sleepChip: TextView
+        sleepChip = chip("Set time") {
+            pickTime("I plan to sleep at", intended ?: LocalTime.of(1, 0)) { t ->
+                intended = t
+                sleepChip.text = t.format(clock)
+                paint(sleepChip, true)
+            }
+        }
+        paint(sleepChip, false)
+        card.addView(sleepChip, lp(top = 4))
+
         val done = chip("Done") {
             val p = JSONObject().put("day", a.day.toString())
+            intended?.let { p.put("intended_sleep", BubbleLogic.intendedSleep(a.day, it, zone).toString()) }
             for ((k, v) in picked) p.put(k, v)                     // unanswered stays out: unknown, never "missed"
             if (napNone || naps.length() > 0) p.put("naps", naps)
             answer(PHONE_EVENING, p)

@@ -21,6 +21,15 @@ interface AnswerRemote {
 object BubbleLogic {
     const val WINDOW_MS = 30 * 60_000L
     /** How long "Not now" hides a daily sheet or the anomaly question. */
+    /**
+     * A bedtime typed as a clock time, as the moment it means for the day (05:00 to 05:00) the evening sheet is about:
+     * before 05:00 it is after midnight, so it belongs to the next calendar date.
+     */
+    fun intendedSleep(day: java.time.LocalDate, t: java.time.LocalTime, zone: java.time.ZoneId): java.time.Instant {
+        val date = if (t.isBefore(java.time.LocalTime.of(5, 0))) day.plusDays(1) else day
+        return date.atTime(t).atZone(zone).toInstant()
+    }
+
     const val SNOOZE_MS = 3 * 60 * 60_000L
     const val AMBER_MS = 10 * 60_000L
     const val RED_MS = 30 * 60_000L

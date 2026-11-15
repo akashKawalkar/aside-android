@@ -157,4 +157,12 @@ class AnswerSyncTest {
         val out = AnswerSync(dao, object : AnswerRemote { override suspend fun uploadAnswers(batch: List<PhoneAnswer>) = throw RejectedError(404, "no such function") }).run()
         assertFalse(out.retryLater); assertTrue(out.error!!.contains("404"))
     }
+
+    @Test
+    fun a_bedtime_before_five_is_after_midnight_of_the_next_date() {
+        val zone = java.time.ZoneId.of("Asia/Kolkata")
+        val day = java.time.LocalDate.of(2026, 11, 15)
+        assertEquals("2026-11-15T20:30:00Z", BubbleLogic.intendedSleep(day, java.time.LocalTime.of(2, 0), zone).toString())   // 02:00 on the 16th
+        assertEquals("2026-11-15T17:30:00Z", BubbleLogic.intendedSleep(day, java.time.LocalTime.of(23, 0), zone).toString())  // 23:00 on the 15th
+    }
 }
