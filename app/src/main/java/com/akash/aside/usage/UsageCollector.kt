@@ -22,19 +22,7 @@ class UsageCollector(private val ctx: Context, private val dao: UsageDao) {
         val startOfToday = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val from = Prefs.usageCursor(ctx).takeIf { it > 0 } ?: startOfToday
 
-        val raw = ArrayList<RawEvent>()
-        val events = usm.queryEvents(from, now)
-        val e = UsageEvents.Event()
-        while (events.hasNextEvent()) {
-            events.getNextEvent(e)
-            val type = when (e.eventType) {
-                UsageEvents.Event.ACTIVITY_RESUMED -> RawEvent.Type.RESUME
-                UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.ACTIVITY_STOPPED -> RawEvent.Type.PAUSE
-                UsageEvents.Event.SCREEN_NON_INTERACTIVE, UsageEvents.Event.DEVICE_SHUTDOWN -> RawEvent.Type.SCREEN_OFF
-                else -> continue
-            }
-            raw += RawEvent(e.timeStamp, type, e.packageName.orEmpty())
-        }
+        val raw = readRaw(usm, from, now)
 
         val ignored = ignoredSet(ctx)
         val result = SessionBuilder({ it.isEmpty() || it in ignored }).build(raw)
@@ -47,6 +35,24 @@ class UsageCollector(private val ctx: Context, private val dao: UsageDao) {
     data class AppInfo(val pkg: String, val label: String)
 
     companion object {
+        /** The phone's foreground events between two moments, boiled down to what the session builder needs. */
+        fun readRaw(usm: UsageStatsManager, from: Long, to: Long): List<RawEvent> {
+            val raw = ArrayList<RawEvent>()
+            val events = usm.queryEvents(from, to)
+            val e = UsageEvents.Event()
+            while (events.hasNextEvent()) {
+                events.getNextEvent(e)
+                val type = when (e.eventType) {
+                    UsageEvents.Event.ACTIVITY_RESUMED -> RawEvent.Type.RESUME
+                    UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.ACTIVITY_STOPPED -> RawEvent.Type.PAUSE
+                    UsageEvents.Event.SCREEN_NON_INTERACTIVE, UsageEvents.Event.DEVICE_SHUTDOWN -> RawEvent.Type.SCREEN_OFF
+                    else -> continue
+                }
+                raw += RawEvent(e.timeStamp, type, e.packageName.orEmpty())
+            }
+            return raw
+        }
+
         fun hasAccess(ctx: Context): Boolean {
             val ops = ctx.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
             return ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), ctx.packageName) == AppOpsManager.MODE_ALLOWED

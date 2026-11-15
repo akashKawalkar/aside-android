@@ -19,7 +19,7 @@ class SessionBuilder(
     private val joinGapMs: Long = 2_000,
 ) {
     /** `openSince` is the start of the app that is still in front at the end of the events (not a session yet). */
-    data class Result(val closed: List<Span>, val openSince: Long?)
+    data class Result(val closed: List<Span>, val openSince: Long?, val openPkg: String? = null)
     data class Span(val pkg: String, val startMs: Long, val endMs: Long)
 
     fun build(events: List<RawEvent>): Result {
@@ -44,7 +44,7 @@ class SessionBuilder(
                 RawEvent.Type.SCREEN_OFF -> close(e.timeMs)
             }
         }
-        return Result(join(out), if (curPkg != null) curStart else null)
+        return Result(join(out), if (curPkg != null) curStart else null, curPkg)
     }
 
     private fun join(spans: List<Span>): List<Span> {

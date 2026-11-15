@@ -14,6 +14,10 @@ object Kind {
     const val NOTE = "note"
     const val JOURNAL = "journal"
     const val TASK = "task"
+    /** `p:` an instruction for the next plan only. */
+    const val PLAN = "plan"
+    /** `r:` a standing rule, saved for review. */
+    const val RULE = "rule"
 }
 
 object State {
@@ -66,10 +70,11 @@ interface ItemDao {
     @Query("SELECT COUNT(*) FROM item WHERE state = 'committed'") fun observePending(): Flow<Int>
 }
 
-@Database(entities = [Item::class, UsageSession::class], version = 2, exportSchema = false)
+@Database(entities = [Item::class, UsageSession::class, PhoneAnswer::class], version = 3, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun itemDao(): ItemDao
     abstract fun usageDao(): UsageDao
+    abstract fun answerDao(): AnswerDao
 }
 
 /** Version 2 added the usage table; nothing a person wrote is touched. */

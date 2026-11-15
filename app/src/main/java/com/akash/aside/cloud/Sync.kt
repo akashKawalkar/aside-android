@@ -47,8 +47,10 @@ class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
         if (!client.configured || !client.signedIn) return Result.success()   // nothing to send until signed in
         val items = SyncEngine(app.db.itemDao(), client).run()
         val usage = UsageSync(app.db.usageDao(), client).run()
+        val answers = com.akash.aside.bubble.AnswerSync(app.db.answerDao(), client).run()
         com.akash.aside.watch.Watch.run(applicationContext, client)
-        Prefs.setSyncResult(applicationContext, System.currentTimeMillis(), items.error ?: usage.error)
-        return if (items.retryLater || usage.retryLater) Result.retry() else Result.success()
+        com.akash.aside.bubble.PlanFetch.run(applicationContext, client)
+        Prefs.setSyncResult(applicationContext, System.currentTimeMillis(), items.error ?: usage.error ?: answers.error)
+        return if (items.retryLater || usage.retryLater || answers.retryLater) Result.retry() else Result.success()
     }
 }

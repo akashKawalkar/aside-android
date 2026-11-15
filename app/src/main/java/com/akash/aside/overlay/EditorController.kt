@@ -213,7 +213,7 @@ class EditorController(
     }
 
     private fun editText() = EditText(ctx).apply {
-        hint = "Write… (j: journal, t: task)"
+        hint = "Write… (j: journal, t: task, p: next plan, r: rule)"
         setHintTextColor(Ui.MUTED)
         setTextColor(Ui.TEXT)
         textSize = 17f
@@ -229,6 +229,7 @@ class EditorController(
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 Prefix.parse(s?.toString().orEmpty()).kind?.let { if (it != chip) { chip = it; renderChips() } }
+                if (chip == Kind.PLAN) say("For the next plan only") else if (chip == Kind.RULE) say("Standing rule, saved for review")
                 handler.removeCallbacks(saveRunnable)
                 handler.postDelayed(saveRunnable, 250)
             }

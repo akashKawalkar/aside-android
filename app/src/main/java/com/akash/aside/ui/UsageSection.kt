@@ -79,21 +79,23 @@ fun UsageSection() {
         )
     }
     OutlinedButton(onClick = { picking = true }) { Text("Apps to ignore") }
-    if (picking) IgnoreDialog { picking = false }
+    if (picking) {
+        AppPickerDialog("Apps to ignore", UsageCollector.ignoredSet(ctx), { Prefs.setIgnoredApps(ctx, it) }) { picking = false }
+    }
 }
 
-/** Banking apps are ticked at first; tick or untick anything. */
+/** A searchable list of the phone's apps with a tick box each. `initial` is what is ticked at first. */
 @Composable
-private fun IgnoreDialog(onDone: () -> Unit) {
+fun AppPickerDialog(title: String, initial: Set<String>, onSave: (Set<String>) -> Unit, onDone: () -> Unit) {
     val ctx = LocalContext.current
     val apps = remember { UsageCollector.launchableApps(ctx) }
-    var ignored by remember { mutableStateOf(UsageCollector.ignoredSet(ctx).filter { p -> apps.any { it.pkg == p } }.toSet()) }
+    var ignored by remember { mutableStateOf(initial.filter { p -> apps.any { it.pkg == p } }.toSet()) }
     var query by remember { mutableStateOf("") }
     val shown = remember(query) { apps.filter { query.isBlank() || it.label.contains(query, ignoreCase = true) || it.pkg.contains(query, ignoreCase = true) } }
 
     AlertDialog(
         onDismissRequest = onDone,
-        title = { Text("Apps to ignore") },
+        title = { Text(title) },
         text = {
             Column {
                 OutlinedTextField(query, { query = it }, placeholder = { Text("Search apps") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -110,7 +112,7 @@ private fun IgnoreDialog(onDone: () -> Unit) {
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { Prefs.setIgnoredApps(ctx, ignored); onDone() }) { Text("Save") } },
+        confirmButton = { TextButton(onClick = { onSave(ignored); onDone() }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDone) { Text("Cancel") } },
     )
 }

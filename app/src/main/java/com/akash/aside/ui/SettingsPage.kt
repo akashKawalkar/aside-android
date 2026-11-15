@@ -77,6 +77,8 @@ fun SettingsPage(activity: FragmentActivity, repo: CaptureRepository, modifier: 
         HorizontalDivider()
         UsageSection()
         HorizontalDivider()
+        BubbleSection()
+        HorizontalDivider()
         AppearanceSection()
         HorizontalDivider()
         SecuritySection(activity)

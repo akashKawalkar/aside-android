@@ -13,6 +13,8 @@ import com.akash.aside.AsideApp
 import com.akash.aside.Notifications
 import com.akash.aside.Prefs
 import com.akash.aside.ReminderScheduler
+import com.akash.aside.bubble.BubbleWatcher
+import com.akash.aside.bubble.QuestionController
 import com.akash.aside.data.Kind
 
 /** Keeps the dot on screen. Android requires a foreground service (and its quiet notification) for that. */
@@ -20,10 +22,14 @@ class CaptureService : Service() {
     private lateinit var wm: WindowManager
     private var dot: DotController? = null
     private var editor: EditorController? = null
+    private var bubble: BubbleWatcher? = null
+    private var questions: QuestionController? = null
 
     // Held in a field on purpose: SharedPreferences keeps listeners only weakly.
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == Prefs.KEY_DOT_SIZE || key == Prefs.KEY_ICON_VERSION) dot?.refresh()
+        // A sync brought a sleep guess or an anomaly, or the settings changed: color the ring now.
+        if (key == "bubble_enabled" || key == "flagged_apps" || key == "sleep_day" || key == "anomaly_day") bubble?.refresh()
     }
 
     override fun onCreate() {
@@ -36,13 +42,17 @@ class CaptureService : Service() {
         }
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val repo = (application as AsideApp).repo
-        val d = DotController(this, wm, onTap = { openEditor() }, onHide = { hideForNow() }, onLongPress = { openEditor(voice = true) })
+        val d = DotController(this, wm, onTap = { onDotTap() }, onHide = { hideForNow() }, onLongPress = { openEditor(voice = true) })
         dot = d
         editor = EditorController(this, wm, repo) { hadText ->
             d.show()
             if (hadText) d.pulse()
         }
+        val b = BubbleWatcher(this, d, (application as AsideApp).db.answerDao())
+        bubble = b
+        questions = QuestionController(this, wm, onAnswer = { kind, payload -> b.answered(kind, payload) }, onClosed = { d.show() })
         d.show()
+        b.start()
         Prefs.raw(this).registerOnSharedPreferenceChangeListener(prefListener)
         ReminderScheduler.cancel(this)
     }
@@ -55,6 +65,18 @@ class CaptureService : Service() {
         return START_STICKY
     }
 
+    /** A colored dot opens its question sheet; a plain one opens the input window. */
+    private fun onDotTap() {
+        val ask = bubble?.currentAsk()
+        if (ask == null) {
+            openEditor()
+            return
+        }
+        bubble?.opened()
+        dot?.remove()
+        questions?.show(ask)
+    }
+
     private fun openEditor(kind: String = Kind.NOTE, voice: Boolean = false) {
         dot?.remove()
         editor?.show(kind, voice)
@@ -63,6 +85,7 @@ class CaptureService : Service() {
     /** Dragged to the X (or "Hide"): gone now, one quiet reminder in 15 minutes. */
     private fun hideForNow() {
         editor?.dismiss()
+        questions?.dismiss()
         dot?.remove()
         ReminderScheduler.scheduleIn15(this)
         stopSelf()
@@ -76,6 +99,8 @@ class CaptureService : Service() {
     override fun onDestroy() {
         Prefs.raw(this).unregisterOnSharedPreferenceChangeListener(prefListener)
         editor?.dismiss() // keeps whatever was being typed
+        bubble?.stop()
+        questions?.dismiss()
         dot?.remove()
         super.onDestroy()
     }

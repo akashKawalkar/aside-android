@@ -36,7 +36,39 @@ class DotController(
     private var params: WindowManager.LayoutParams? = null
     private var trash: TextView? = null
 
-    private val fade = Runnable { view?.animate()?.alpha(IDLE_ALPHA)?.setDuration(400)?.start() }
+    /** A ring around the dot (drawn over it, so a custom picture still works). Null: no ring. */
+    private var ring: Int? = null
+
+    private val fade = Runnable { if (ring == null) view?.animate()?.alpha(IDLE_ALPHA)?.setDuration(400)?.start() }
+
+    /** Colors the ring, or removes it with null. While it is colored the dot stays at full opacity. */
+    fun setRing(color: Int?) {
+        ring = color
+        applyRing()
+    }
+
+    private fun applyRing() {
+        val v = view ?: return
+        val c = ring
+        if (c == null) {
+            v.foreground = null
+            scheduleFade()
+        } else {
+            v.foreground = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(android.graphics.Color.TRANSPARENT)
+                setStroke(Ui.dp(ctx, 4), c)
+            }
+            handler.removeCallbacks(fade)
+            v.animate().cancel()
+            v.alpha = 1f
+        }
+    }
+
+    /** One soft tick: a threshold was crossed. */
+    fun tick() {
+        view?.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+    }
 
     private fun screen() = wm.currentWindowMetrics.bounds
 
@@ -58,6 +90,7 @@ class DotController(
         view = v
         params = p
         scheduleFade()
+        applyRing()
     }
 
     private fun buildView(): FrameLayout = FrameLayout(ctx).apply {
@@ -130,7 +163,7 @@ class DotController(
 
     private fun scheduleFade() {
         handler.removeCallbacks(fade)
-        handler.postDelayed(fade, FADE_AFTER_MS)
+        if (ring == null) handler.postDelayed(fade, FADE_AFTER_MS)
     }
 
     private var downX = 0f

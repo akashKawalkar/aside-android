@@ -23,7 +23,7 @@ class SupabaseClient(
     private val ctx: Context,
     private val baseUrl: String = BuildConfig.SUPABASE_URL.trimEnd('/'),
     private val anonKey: String = BuildConfig.SUPABASE_ANON_KEY,
-) : Remote, com.akash.aside.usage.UsageRemote {
+) : Remote, com.akash.aside.usage.UsageRemote, com.akash.aside.bubble.AnswerRemote {
     private val refreshLock = Mutex()
 
     val configured get() = baseUrl.isNotBlank() && anonKey.isNotBlank()
@@ -97,6 +97,42 @@ class SupabaseClient(
         }
         rpc("upload_usage", JSONObject().put("p_batch", rows))
     }
+
+    override suspend fun uploadAnswers(batch: List<com.akash.aside.data.PhoneAnswer>) {
+        val rows = JSONArray()
+        for (a in batch) {
+            rows.put(
+                JSONObject().put("id", a.id).put("kind", a.kind)
+                    .put("at", Instant.ofEpochMilli(a.atMs).toString())
+                    .put("payload", runCatching { JSONObject(a.payload) }.getOrDefault(JSONObject()))
+            )
+        }
+        rpc("upload_answers", JSONObject().put("p_batch", rows))
+    }
+
+    /** The live plan blocks of one day (local date), for the "Plan now" line. */
+    suspend fun planBlocks(day: java.time.LocalDate): List<com.akash.aside.bubble.PlanBlock> {
+        val arr = JSONArray(rpc("plan_blocks", JSONObject().put("p_day", day.toString())))
+        return (0 until arr.length()).map {
+            val o = arr.getJSONObject(it)
+            com.akash.aside.bubble.PlanBlock(o.getString("title"), parseTs(o.getString("start_at")), parseTs(o.getString("end_at")))
+        }
+    }
+
+    /** The server's guess of the sleep window ending on `day`, or null. Epoch milliseconds. */
+    suspend fun sleepGuess(day: java.time.LocalDate): Pair<Long, Long>? {
+        val arr = JSONArray(rpc("sleep_guess", JSONObject().put("p_day", day.toString())))
+        if (arr.length() == 0) return null
+        val o = arr.getJSONObject(0)
+        return parseTs(o.getString("sleep_start")) to parseTs(o.getString("wake_at"))
+    }
+
+    /** The day (yyyy-MM-dd) both devices were silent and the anomaly question is still unanswered, or null. */
+    suspend fun anomalyDue(): String? =
+        rpc("anomaly_due", JSONObject()).trim().removeSurrounding("\"").takeUnless { it.isEmpty() || it == "null" }
+
+    private fun parseTs(s: String): Long =
+        Instant.parse(s.replace(" ", "T").let { v -> if (v.endsWith("+00:00")) v.dropLast(6) + "Z" else v }).toEpochMilli()
 
     private suspend fun rpc(name: String, args: JSONObject): String {
         var (code, body) = send("POST", "/rest/v1/rpc/$name", args, token())

@@ -52,6 +52,8 @@ private val dueFormat = DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefau
 private fun label(kind: String) = when (kind) {
     Kind.JOURNAL -> "Journal"
     Kind.TASK -> "Task"
+    Kind.PLAN -> "Plan"
+    Kind.RULE -> "Rule"
     else -> "Note"
 }
 
