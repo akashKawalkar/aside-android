@@ -21,13 +21,64 @@ object BubbleStore {
     // --- plan blocks (fetched with every sync, so the "Plan now" line works offline) ---
     fun plan(c: Context): List<PlanBlock> = runCatching {
         val arr = JSONArray(sp(c).getString("plan_cache", "[]"))
-        (0 until arr.length()).map { arr.getJSONObject(it).let { o -> PlanBlock(o.getString("t"), o.getLong("s"), o.getLong("e")) } }
+        (0 until arr.length()).map {
+            val o = arr.getJSONObject(it)
+            PlanBlock(
+                title = o.getString("t"),
+                startMs = o.getLong("s"),
+                endMs = o.getLong("e"),
+                taskId = if (o.has("task_id") && !o.isNull("task_id")) o.getInt("task_id") else null,
+                slipCount = o.optInt("slip_count", 0),
+            )
+        }
     }.getOrDefault(emptyList())
 
     fun setPlan(c: Context, blocks: List<PlanBlock>) {
         val arr = JSONArray()
-        for (b in blocks) arr.put(JSONObject().put("t", b.title).put("s", b.startMs).put("e", b.endMs))
+        for (b in blocks) {
+            val o = JSONObject().put("t", b.title).put("s", b.startMs).put("e", b.endMs)
+            b.taskId?.let { o.put("task_id", it) }
+            if (b.slipCount > 0) o.put("slip_count", b.slipCount)
+            arr.put(o)
+        }
         sp(c).edit().putString("plan_cache", arr.toString()).apply()
+    }
+
+    // --- task checks and debriefs ---
+    fun taskChecksDone(c: Context): Set<String> = sp(c).getStringSet("task_checks_done", emptySet()) ?: emptySet()
+    fun markTaskCheckDone(c: Context, key: String) {
+        val set = taskChecksDone(c).toMutableSet().apply {
+            if (size > 100) clear()
+            add(key)
+        }
+        sp(c).edit().putStringSet("task_checks_done", set).apply()
+    }
+
+    fun taskChecksSnoozed(c: Context): Set<String> = sp(c).getStringSet("task_checks_snoozed", emptySet()) ?: emptySet()
+    fun snoozeTaskCheck(c: Context, key: String) {
+        val set = taskChecksSnoozed(c).toMutableSet().apply {
+            if (size > 100) clear()
+            add(key)
+        }
+        sp(c).edit().putStringSet("task_checks_snoozed", set).apply()
+    }
+
+    fun debriefsDone(c: Context): Set<String> = sp(c).getStringSet("debriefs_done", emptySet()) ?: emptySet()
+    fun markDebriefDone(c: Context, key: String) {
+        val set = debriefsDone(c).toMutableSet().apply {
+            if (size > 100) clear()
+            add(key)
+        }
+        sp(c).edit().putStringSet("debriefs_done", set).apply()
+    }
+
+    fun debriefsSnoozed(c: Context): Set<String> = sp(c).getStringSet("debriefs_snoozed", emptySet()) ?: emptySet()
+    fun snoozeDebrief(c: Context, key: String) {
+        val set = debriefsSnoozed(c).toMutableSet().apply {
+            if (size > 100) clear()
+            add(key)
+        }
+        sp(c).edit().putStringSet("debriefs_snoozed", set).apply()
     }
 
     // --- sleep guess, for the morning sheet ---

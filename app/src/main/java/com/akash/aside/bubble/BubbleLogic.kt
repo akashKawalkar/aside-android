@@ -7,7 +7,45 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 
 /** One block of today's plan, as the phone shows it. */
-data class PlanBlock(val title: String, val startMs: Long, val endMs: Long)
+data class PlanBlock(
+    val title: String,
+    val startMs: Long,
+    val endMs: Long,
+    val taskId: Int? = null,
+    val slipCount: Int = 0,
+) {
+    val durationMs: Long get() = maxOf(0L, endMs - startMs)
+
+    fun isAnchorOrBreak(): Boolean {
+        val t = title.lowercase()
+        return t.contains("workout") || t.contains("exercise") || t.contains("gym") ||
+                t.contains("meditation") || t.contains("lunch") || t.contains("dinner") ||
+                t.contains("breakfast") || t.contains("walk") || t.contains("break") ||
+                t.contains("chores") || t.contains("wind down") || t.contains("sleep") ||
+                t.contains("sing") || t.contains("nap")
+    }
+
+    fun isDeepWork(): Boolean {
+        if (isAnchorOrBreak()) return false
+        val t = title.lowercase()
+        if (t.contains("deep work") || t.contains("deepwork") || t.startsWith("project") ||
+            t.contains("coding") || t.contains("study") || t.contains("research") || t.contains("architecture")) {
+            return true
+        }
+        return durationMs >= 60 * 60_000L
+    }
+
+    fun isTask(): Boolean {
+        if (isAnchorOrBreak()) return false
+        return !isDeepWork() || taskId != null || title.contains("task", ignoreCase = true)
+    }
+
+    val parsedSlipCount: Int get() {
+        if (slipCount > 0) return slipCount
+        val m = Regex("""slipped\s+(\d+)x?""", RegexOption.IGNORE_CASE).find(title)
+        return m?.groupValues?.get(1)?.toIntOrNull() ?: 0
+    }
+}
 
 interface AnswerRemote {
     suspend fun uploadAnswers(batch: List<PhoneAnswer>)
@@ -16,10 +54,17 @@ interface AnswerRemote {
 /**
  * The rules for the colored ring around the dot, free of Android so they are tested on the JVM.
  * Neutral: no ring. Amber / red: time on flagged apps in the last 30 minutes. Blue: a question sheet is waiting.
- * One color at a time; priority is anomaly, then the daily sheets, then distraction.
+ * One color at a time; priority is task check / debrief / anomaly, then the daily sheets, then distraction.
  */
 object BubbleLogic {
     const val WINDOW_MS = 30 * 60_000L
+    const val TASK_CHECK_WINDOW_BEFORE_MS = 10 * 60_000L
+    const val TASK_CHECK_GRACE_AFTER_MS = 5 * 60_000L
+    const val DEBRIEF_WINDOW_AFTER_MS = 30 * 60_000L
+
+    fun blockKey(title: String, timeMs: Long): String = "${title.trim()}_$timeMs"
+    fun blockKey(b: PlanBlock): String = blockKey(b.title, b.startMs)
+    fun debriefKey(b: PlanBlock): String = blockKey(b.title, b.endMs)
     /** How long "Not now" hides a daily sheet or the anomaly question. */
     /**
      * A bedtime typed as a clock time, as the moment it means for the day (05:00 to 05:00) the evening sheet is about:
@@ -86,9 +131,51 @@ object BubbleLogic {
         }
     }
 
-    fun ring(anomalyWaiting: Boolean, sheet: Sheet?, distraction: Ring): Ring = when {
-        anomalyWaiting || sheet != null -> Ring.BLUE
+    fun ring(anomalyWaiting: Boolean, sheet: Sheet?, distraction: Ring): Ring =
+        ring(anomalyWaiting, sheet, null, null, distraction)
+
+    fun ring(
+        anomalyWaiting: Boolean,
+        sheet: Sheet?,
+        taskCheck: PlanBlock?,
+        debrief: PlanBlock?,
+        distraction: Ring,
+    ): Ring = when {
+        taskCheck != null || debrief != null || anomalyWaiting || sheet != null -> Ring.BLUE
         else -> distraction
+    }
+
+    /**
+     * Checks if a scheduled task is 10 minutes away (or within 5 min after start),
+     * asking "Where does it stand?".
+     */
+    fun taskCheckWaiting(
+        blocks: List<PlanBlock>,
+        nowMs: Long,
+        answeredKeys: Set<String>,
+        snoozedKeys: Set<String>,
+    ): PlanBlock? = blocks.firstOrNull { b ->
+        val key = blockKey(b)
+        key !in answeredKeys && key !in snoozedKeys &&
+            b.isTask() &&
+            nowMs >= (b.startMs - TASK_CHECK_WINDOW_BEFORE_MS) &&
+            nowMs < (b.startMs + TASK_CHECK_GRACE_AFTER_MS)
+    }
+
+    /**
+     * Checks if a deep work session ended in the last 30 minutes, asking for debrief.
+     */
+    fun debriefWaiting(
+        blocks: List<PlanBlock>,
+        nowMs: Long,
+        answeredKeys: Set<String>,
+        snoozedKeys: Set<String>,
+    ): PlanBlock? = blocks.lastOrNull { b ->
+        val key = debriefKey(b)
+        key !in answeredKeys && key !in snoozedKeys &&
+            b.isDeepWork() &&
+            nowMs >= b.endMs &&
+            nowMs < (b.endMs + DEBRIEF_WINDOW_AFTER_MS)
     }
 
     /** Whether a ring that just appeared may count as a new prompt, given today's count. */

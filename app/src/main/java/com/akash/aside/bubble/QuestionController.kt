@@ -37,6 +37,8 @@ sealed interface Ask {
     data class Sleep(val day: LocalDate, val guessStartMs: Long?, val guessWakeMs: Long?) : Ask
     data class Evening(val day: LocalDate) : Ask
     data class Anomaly(val day: LocalDate) : Ask
+    data class TaskCheck(val title: String, val startMs: Long, val slipCount: Int) : Ask
+    data class Debrief(val title: String, val endMs: Long) : Ask
 }
 
 /**
@@ -85,6 +87,8 @@ class QuestionController(
             is Ask.Sleep -> sleep(card, ask)
             is Ask.Evening -> evening(card, ask)
             is Ask.Anomaly -> anomaly(card, ask)
+            is Ask.TaskCheck -> taskCheck(card, ask)
+            is Ask.Debrief -> debrief(card, ask)
         }
         card.addView(text("Not now", 14f, Ui.MUTED).apply {
             gravity = Gravity.END
@@ -323,6 +327,169 @@ class QuestionController(
         card.addView(r, lp(top = 12))
     }
 
+    // --- task check (10 min before scheduled task) ---
+
+    private fun taskCheck(card: LinearLayout, a: Ask.TaskCheck) {
+        val slip = if (a.slipCount > 0) " (slipped ${a.slipCount}x)" else ""
+        card.addView(text("${a.title} is up in 10 min$slip. Where does it stand?", 16f, Ui.TEXT))
+
+        val chips = row()
+        val second = row()
+        card.addView(chips, lp(top = 12))
+        card.addView(second, lp(top = 8))
+
+        val options = listOf(
+            "already_done" to "Already done",
+            "starting_now" to "Starting now",
+            "blocked" to "Blocked / need info",
+            "not_today" to "Not today",
+        )
+
+        var selectedKey: String? = null
+        val chipViews = HashMap<String, TextView>()
+
+        // Input field for voice / typed notes
+        val et = EditText(ctx).apply {
+            hint = "Say or type anything for the planner…"
+            setHintTextColor(Ui.MUTED)
+            setTextColor(Ui.TEXT)
+            textSize = 15f
+            background = null
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_FULLSCREEN
+            maxLines = 4
+        }
+        note = et
+
+        val submitBtn = chip("Submit") {
+            val key = selectedKey ?: "note"
+            val p = JSONObject()
+                .put("title", a.title)
+                .put("status", key)
+                .put("block_start", a.startMs)
+                .put("slip_count", a.slipCount)
+            note?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { p.put("text", it) }
+            answer(PHONE_TASK_CHECK, p)
+        }.apply {
+            paint(this, true)
+            visibility = View.GONE
+        }
+
+        options.forEachIndexed { i, (key, label) ->
+            lateinit var c: TextView
+            c = chip(label) {
+                if (key == "blocked") {
+                    selectedKey = key
+                    for ((k, v) in chipViews) paint(v, k == key)
+                    et.hint = "What's in the way?"
+                    et.requestFocus()
+                    submitBtn.visibility = View.VISIBLE
+                } else {
+                    val p = JSONObject()
+                        .put("title", a.title)
+                        .put("status", key)
+                        .put("block_start", a.startMs)
+                        .put("slip_count", a.slipCount)
+                    et.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { p.put("text", it) }
+                    answer(PHONE_TASK_CHECK, p)
+                }
+            }
+            chipViews[key] = c
+            paint(c, false)
+            (if (i < 2) chips else second).addView(c, weighted())
+        }
+
+        val mic = chip("Speak") { startVoice() }.also { it.background = Ui.rounded(Ui.CHIP, Ui.dp(ctx, 16)); it.setTextColor(Ui.MUTED) }
+        val bottom = row().apply { gravity = Gravity.CENTER_VERTICAL }
+        bottom.addView(et, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        bottom.addView(mic)
+        card.addView(bottom, lp(top = 10))
+        card.addView(submitBtn, lp(top = 8))
+
+        et.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                submitBtn.visibility = if (s?.isNotBlank() == true || selectedKey == "blocked") View.VISIBLE else View.GONE
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+
+        val st = text("", 13f, Ui.ACCENT).apply { visibility = View.GONE }
+        speakStatus = st
+        card.addView(st)
+    }
+
+    // --- deep work debrief (after deep work wraps up) ---
+
+    private fun debrief(card: LinearLayout, a: Ask.Debrief) {
+        card.addView(text("${a.title} wrapped up. Done, or continuing tomorrow?", 16f, Ui.TEXT))
+
+        val chips = row()
+        card.addView(chips, lp(top = 12))
+
+        val options = listOf(
+            "continue_tomorrow" to "Continue tomorrow",
+            "finished" to "Finished",
+            "paused" to "Paused / Shelved",
+        )
+
+        var selectedOutcome = "continue_tomorrow"
+        val chipViews = HashMap<String, TextView>()
+
+        val et = EditText(ctx).apply {
+            hint = "What did you get done? Say or type…"
+            setHintTextColor(Ui.MUTED)
+            setTextColor(Ui.TEXT)
+            textSize = 15f
+            background = null
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_FULLSCREEN
+            maxLines = 4
+        }
+        note = et
+
+        options.forEach { (key, label) ->
+            lateinit var c: TextView
+            c = chip(label) {
+                selectedOutcome = key
+                for ((k, v) in chipViews) paint(v, k == key)
+                val noteText = et.text?.toString()?.trim()
+                if (!noteText.isNullOrEmpty()) {
+                    val p = JSONObject()
+                        .put("title", a.title)
+                        .put("outcome", key)
+                        .put("block_end", a.endMs)
+                        .put("text", noteText)
+                    answer(PHONE_DEBRIEF, p)
+                }
+            }
+            chipViews[key] = c
+            paint(c, key == selectedOutcome)
+            chips.addView(c, weighted())
+        }
+
+        val mic = chip("Speak") { startVoice() }.also { it.background = Ui.rounded(Ui.CHIP, Ui.dp(ctx, 16)); it.setTextColor(Ui.MUTED) }
+        val bottom = row().apply { gravity = Gravity.CENTER_VERTICAL }
+        bottom.addView(et, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        bottom.addView(mic)
+        card.addView(bottom, lp(top = 10))
+
+        val saveBtn = chip("Save debrief") {
+            val p = JSONObject()
+                .put("title", a.title)
+                .put("outcome", selectedOutcome)
+                .put("block_end", a.endMs)
+            et.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { p.put("text", it) }
+            answer(PHONE_DEBRIEF, p)
+        }
+        paint(saveBtn, true)
+        card.addView(saveBtn, lp(top = 8))
+
+        val st = text("", 13f, Ui.ACCENT).apply { visibility = View.GONE }
+        speakStatus = st
+        card.addView(st)
+    }
+
     // --- small view helpers ---
 
     private fun text(t: String, size: Float, color: Int) = TextView(ctx).apply { text = t; textSize = size; setTextColor(color) }
@@ -355,5 +522,7 @@ class QuestionController(
         const val PHONE_SLEEP = "sleep"
         const val PHONE_EVENING = "evening"
         const val PHONE_ANOMALY = "anomaly"
+        const val PHONE_TASK_CHECK = "task_check"
+        const val PHONE_DEBRIEF = "debrief"
     }
 }

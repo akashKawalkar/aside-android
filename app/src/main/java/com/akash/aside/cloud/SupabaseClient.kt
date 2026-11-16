@@ -101,21 +101,33 @@ class SupabaseClient(
     override suspend fun uploadAnswers(batch: List<com.akash.aside.data.PhoneAnswer>) {
         val rows = JSONArray()
         for (a in batch) {
+            val isKnownServerKind = a.kind in listOf("distraction", "sleep", "evening", "anomaly", "tap")
+            val payloadObj = runCatching { JSONObject(a.payload) }.getOrDefault(JSONObject())
+            if (!isKnownServerKind) {
+                payloadObj.put("subkind", a.kind)
+            }
             rows.put(
-                JSONObject().put("id", a.id).put("kind", a.kind)
+                JSONObject().put("id", a.id)
+                    .put("kind", if (isKnownServerKind) a.kind else "tap")
                     .put("at", Instant.ofEpochMilli(a.atMs).toString())
-                    .put("payload", runCatching { JSONObject(a.payload) }.getOrDefault(JSONObject()))
+                    .put("payload", payloadObj)
             )
         }
         rpc("upload_answers", JSONObject().put("p_batch", rows))
     }
 
-    /** The live plan blocks of one day (local date), for the "Plan now" line. */
+    /** The live plan blocks of one day (local date), for the "Plan now" line and task checks. */
     suspend fun planBlocks(day: java.time.LocalDate): List<com.akash.aside.bubble.PlanBlock> {
         val arr = JSONArray(rpc("plan_blocks", JSONObject().put("p_day", day.toString())))
         return (0 until arr.length()).map {
             val o = arr.getJSONObject(it)
-            com.akash.aside.bubble.PlanBlock(o.getString("title"), parseTs(o.getString("start_at")), parseTs(o.getString("end_at")))
+            com.akash.aside.bubble.PlanBlock(
+                title = o.getString("title"),
+                startMs = parseTs(o.getString("start_at")),
+                endMs = parseTs(o.getString("end_at")),
+                taskId = if (o.has("task_id") && !o.isNull("task_id")) o.getInt("task_id") else null,
+                slipCount = o.optInt("slip_count", 0),
+            )
         }
     }
 

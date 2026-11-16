@@ -30,6 +30,8 @@ data class PhoneAnswer(
         const val EVENING = "evening"
         const val ANOMALY = "anomaly"
         const val TAP = "tap"
+        const val TASK_CHECK = "task_check"
+        const val DEBRIEF = "debrief"
     }
 }
 

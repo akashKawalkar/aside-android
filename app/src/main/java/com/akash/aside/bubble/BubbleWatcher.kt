@@ -47,6 +47,8 @@ class BubbleWatcher(
     private var activePrompt = false
     private var byApp: Map<String, Long> = emptyMap()
     private var sheet: BubbleLogic.Sheet? = null
+    private var taskCheck: PlanBlock? = null
+    private var debrief: PlanBlock? = null
     private var anomaly = false
     private var running = false
 
@@ -123,7 +125,15 @@ class BubbleWatcher(
             BubbleStore.sleepFor(ctx, zdt.toLocalDate()) != null,
         )
 
-        val ring = BubbleLogic.ring(anomaly, sheet, distraction)
+        val plan = BubbleStore.plan(ctx)
+        taskCheck = BubbleLogic.taskCheckWaiting(
+            plan, nowMs, BubbleStore.taskChecksDone(ctx), BubbleStore.taskChecksSnoozed(ctx)
+        )
+        debrief = BubbleLogic.debriefWaiting(
+            plan, nowMs, BubbleStore.debriefsDone(ctx), BubbleStore.debriefsSnoozed(ctx)
+        )
+
+        val ring = BubbleLogic.ring(anomaly, sheet, taskCheck, debrief, distraction)
         if (ring != current) {
             val appeared = current == BubbleLogic.Ring.NONE
             current = ring
@@ -157,7 +167,17 @@ class BubbleWatcher(
         val zdt = ZonedDateTime.now()
         val day = BubbleLogic.logicalDay(zdt)
         val nowMs = System.currentTimeMillis()
+
+        // 1. Time-critical task check (10 min before scheduled task)
+        taskCheck?.let { return Ask.TaskCheck(it.title, it.startMs, it.parsedSlipCount) }
+
+        // 2. Time-critical deep work debrief (after deep work block ends)
+        debrief?.let { return Ask.Debrief(it.title, it.endMs) }
+
+        // 3. Anomaly question
         BubbleStore.anomalyDay(ctx)?.takeIf { anomaly }?.let { return Ask.Anomaly(it) }
+
+        // 4. Daily sheets
         when (sheet) {
             BubbleLogic.Sheet.MORNING -> {
                 val s = BubbleStore.sleepFor(ctx, zdt.toLocalDate())
@@ -183,11 +203,20 @@ class BubbleWatcher(
     fun notNow(ask: Ask) {
         val nowMs = System.currentTimeMillis()
         logTap("dismissed", current)
-        if (ask is Ask.Distraction) {
-            BubbleStore.setRingResetAt(ctx, nowMs)
-            activePrompt = false
-        } else {
-            BubbleStore.setSnoozedUntil(ctx, nowMs + BubbleLogic.SNOOZE_MS)
+        when (ask) {
+            is Ask.Distraction -> {
+                BubbleStore.setRingResetAt(ctx, nowMs)
+                activePrompt = false
+            }
+            is Ask.TaskCheck -> {
+                BubbleStore.snoozeTaskCheck(ctx, BubbleLogic.blockKey(ask.title, ask.startMs))
+            }
+            is Ask.Debrief -> {
+                BubbleStore.snoozeDebrief(ctx, BubbleLogic.blockKey(ask.title, ask.endMs))
+            }
+            else -> {
+                BubbleStore.setSnoozedUntil(ctx, nowMs + BubbleLogic.SNOOZE_MS)
+            }
         }
         poll()
     }
@@ -205,6 +234,16 @@ class BubbleWatcher(
                 PhoneAnswer.SLEEP -> BubbleStore.setMorningDone(ctx, LocalDate.parse(payload.getString("day")))
                 PhoneAnswer.EVENING -> BubbleStore.setEveningDone(ctx, LocalDate.parse(payload.getString("day")))
                 PhoneAnswer.ANOMALY -> BubbleStore.setAnomalyAnswered(ctx, LocalDate.parse(payload.getString("for_day")))
+                PhoneAnswer.TASK_CHECK -> {
+                    val title = payload.getString("title")
+                    val startMs = payload.getLong("block_start")
+                    BubbleStore.markTaskCheckDone(ctx, BubbleLogic.blockKey(title, startMs))
+                }
+                PhoneAnswer.DEBRIEF -> {
+                    val title = payload.getString("title")
+                    val endMs = payload.getLong("block_end")
+                    BubbleStore.markDebriefDone(ctx, BubbleLogic.blockKey(title, endMs))
+                }
             }
         }
         poll()

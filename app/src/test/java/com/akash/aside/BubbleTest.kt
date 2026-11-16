@@ -125,6 +125,94 @@ class DailySheetTest {
     }
 }
 
+class TaskCheckTest {
+    @Test fun `task check appears 10 minutes before task start`() {
+        val block = PlanBlock("Renew passport form", 50 * MIN, 80 * MIN)
+        val plan = listOf(block)
+        // 11 min before: not yet
+        assertNull(BubbleLogic.taskCheckWaiting(plan, 39 * MIN, emptySet(), emptySet()))
+        // 10 min before: appears
+        val tc = BubbleLogic.taskCheckWaiting(plan, 40 * MIN, emptySet(), emptySet())
+        assertEquals("Renew passport form", tc?.title)
+        // At start time: still waiting
+        assertEquals("Renew passport form", BubbleLogic.taskCheckWaiting(plan, 50 * MIN, emptySet(), emptySet())?.title)
+        // 4 min after start: still in grace window
+        assertEquals("Renew passport form", BubbleLogic.taskCheckWaiting(plan, 54 * MIN, emptySet(), emptySet())?.title)
+        // 5 min after start: window closed
+        assertNull(BubbleLogic.taskCheckWaiting(plan, 55 * MIN, emptySet(), emptySet()))
+    }
+
+    @Test fun `task check ignores anchors and breaks`() {
+        val plan = listOf(
+            PlanBlock("Morning workout", 50 * MIN, 70 * MIN),
+            PlanBlock("Meditation", 70 * MIN, 100 * MIN),
+            PlanBlock("Walk outside", 100 * MIN, 120 * MIN),
+            PlanBlock("Lunch", 120 * MIN, 150 * MIN),
+        )
+        assertNull(BubbleLogic.taskCheckWaiting(plan, 45 * MIN, emptySet(), emptySet()))
+        assertNull(BubbleLogic.taskCheckWaiting(plan, 65 * MIN, emptySet(), emptySet()))
+    }
+
+    @Test fun `task check respects answered and snoozed keys`() {
+        val block = PlanBlock("Review pull request", 50 * MIN, 70 * MIN)
+        val plan = listOf(block)
+        val key = BubbleLogic.blockKey(block)
+        assertEquals("Review pull request", BubbleLogic.taskCheckWaiting(plan, 45 * MIN, emptySet(), emptySet())?.title)
+        assertNull(BubbleLogic.taskCheckWaiting(plan, 45 * MIN, setOf(key), emptySet()))
+        assertNull(BubbleLogic.taskCheckWaiting(plan, 45 * MIN, emptySet(), setOf(key)))
+    }
+
+    @Test fun `task check parses slip count from title or explicit property`() {
+        val b1 = PlanBlock("Renew passport form (slipped 3x)", 10 * MIN, 30 * MIN)
+        assertEquals(3, b1.parsedSlipCount)
+        val b2 = PlanBlock("Renew passport form", 10 * MIN, 30 * MIN, slipCount = 4)
+        assertEquals(4, b2.parsedSlipCount)
+        val b3 = PlanBlock("Normal task", 10 * MIN, 30 * MIN)
+        assertEquals(0, b3.parsedSlipCount)
+    }
+}
+
+class DebriefTest {
+    @Test fun `debrief appears after deep work block ends`() {
+        val deepWork = PlanBlock("Project coding: API endpoints", 60 * MIN, 180 * MIN)
+        val plan = listOf(deepWork)
+        // While running: no debrief yet
+        assertNull(BubbleLogic.debriefWaiting(plan, 170 * MIN, emptySet(), emptySet()))
+        // Right after end (180m): debrief waiting
+        val d = BubbleLogic.debriefWaiting(plan, 181 * MIN, emptySet(), emptySet())
+        assertEquals("Project coding: API endpoints", d?.title)
+        // 25 min after end: still waiting
+        assertEquals("Project coding: API endpoints", BubbleLogic.debriefWaiting(plan, 205 * MIN, emptySet(), emptySet())?.title)
+        // 30 min after end: expired
+        assertNull(BubbleLogic.debriefWaiting(plan, 210 * MIN, emptySet(), emptySet()))
+    }
+
+    @Test fun `debrief ignores anchors and trivial tasks`() {
+        val plan = listOf(
+            PlanBlock("Morning workout", 60 * MIN, 80 * MIN),
+            PlanBlock("Quick task", 90 * MIN, 110 * MIN), // 20m task
+        )
+        assertNull(BubbleLogic.debriefWaiting(plan, 82 * MIN, emptySet(), emptySet()))
+        assertNull(BubbleLogic.debriefWaiting(plan, 112 * MIN, emptySet(), emptySet()))
+    }
+
+    @Test fun `debrief respects answered and snoozed keys`() {
+        val deepWork = PlanBlock("Study algorithm architecture", 60 * MIN, 150 * MIN)
+        val plan = listOf(deepWork)
+        val key = BubbleLogic.debriefKey(deepWork)
+        assertEquals("Study algorithm architecture", BubbleLogic.debriefWaiting(plan, 155 * MIN, emptySet(), emptySet())?.title)
+        assertNull(BubbleLogic.debriefWaiting(plan, 155 * MIN, setOf(key), emptySet()))
+        assertNull(BubbleLogic.debriefWaiting(plan, 155 * MIN, emptySet(), setOf(key)))
+    }
+
+    @Test fun `blue ring triggers for task check or debrief`() {
+        val tc = PlanBlock("Call dentist", 50 * MIN, 70 * MIN)
+        val dw = PlanBlock("Deep work: Backend", 0, 60 * MIN)
+        assertEquals(Ring.BLUE, BubbleLogic.ring(false, null, tc, null, Ring.NONE))
+        assertEquals(Ring.BLUE, BubbleLogic.ring(false, null, null, dw, Ring.AMBER))
+    }
+}
+
 private class FakeAnswers : AnswerDao {
     val rows = ArrayList<PhoneAnswer>()
     override suspend fun insert(answer: PhoneAnswer) { if (rows.none { it.id == answer.id }) rows += answer }
