@@ -61,6 +61,7 @@ class QuestionController(
     private var voice: VoiceInput? = null
     private var note: EditText? = null
     private var speakStatus: TextView? = null
+    private var voiceBase = ""
 
     val isShowing get() = root != null
 
@@ -173,10 +174,10 @@ class QuestionController(
             say("Allow the microphone for Aside (Settings -> Voice) to talk")
             return
         }
-        val base = et.text.toString()
+        voiceBase = et.text.toString()
         val v = voice ?: VoiceInput(ctx, object : VoiceInput.Listener {
-            override fun onPartial(text: String) { et.setText(VoiceText.merge(base, text)); et.setSelection(et.text.length) }
-            override fun onFinal(text: String) { et.setText(VoiceText.merge(base, text)); et.setSelection(et.text.length); say(null) }
+            override fun onPartial(text: String) { et.setText(VoiceText.merge(voiceBase, text)); et.setSelection(et.text.length) }
+            override fun onFinal(text: String) { et.setText(VoiceText.merge(voiceBase, text)); et.setSelection(et.text.length); say(null) }
             override fun onError(message: String, nothingHeard: Boolean) = say(message)
         }).also { voice = it }
         say("Listening…")
@@ -331,7 +332,9 @@ class QuestionController(
 
     private fun taskCheck(card: LinearLayout, a: Ask.TaskCheck) {
         val slip = if (a.slipCount > 0) " (slipped ${a.slipCount}x)" else ""
-        card.addView(text("${a.title} is up in 10 min$slip. Where does it stand?", 16f, Ui.TEXT))
+        val minsAway = ((a.startMs - System.currentTimeMillis()) / 60_000L).toInt()
+        val when_ = if (minsAway > 0) "is up in $minsAway min" else "is starting now"
+        card.addView(text("${a.title} $when_$slip. Where does it stand?", 16f, Ui.TEXT))
 
         val chips = row()
         val second = row()
@@ -453,15 +456,6 @@ class QuestionController(
             c = chip(label) {
                 selectedOutcome = key
                 for ((k, v) in chipViews) paint(v, k == key)
-                val noteText = et.text?.toString()?.trim()
-                if (!noteText.isNullOrEmpty()) {
-                    val p = JSONObject()
-                        .put("title", a.title)
-                        .put("outcome", key)
-                        .put("block_end", a.endMs)
-                        .put("text", noteText)
-                    answer(PHONE_DEBRIEF, p)
-                }
             }
             chipViews[key] = c
             paint(c, key == selectedOutcome)

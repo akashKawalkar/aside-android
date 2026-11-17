@@ -143,8 +143,9 @@ class SupabaseClient(
     suspend fun anomalyDue(): String? =
         rpc("anomaly_due", JSONObject()).trim().removeSurrounding("\"").takeUnless { it.isEmpty() || it == "null" }
 
+    /** Postgres timestamps, with whatever offset the server session uses ("+00:00", "+05:30", ...). */
     private fun parseTs(s: String): Long =
-        Instant.parse(s.replace(" ", "T").let { v -> if (v.endsWith("+00:00")) v.dropLast(6) + "Z" else v }).toEpochMilli()
+        java.time.OffsetDateTime.parse(s.replace(" ", "T")).toInstant().toEpochMilli()
 
     private suspend fun rpc(name: String, args: JSONObject): String {
         var (code, body) = send("POST", "/rest/v1/rpc/$name", args, token())
